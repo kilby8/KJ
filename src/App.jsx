@@ -50,19 +50,27 @@ export default function App() {
 
   // ── Open folder ──────────────────────────────────────────────────────────
   const handleOpenFolder = useCallback(async () => {
-    if (!window.electronAPI) { addToast('Electron API not available (dev mode)', 'error'); return; }
-    const folders = await window.electronAPI.openFolder();
-    if (!folders.length) return;
-    await loadFromPaths(null, folders);
-  }, []);
+    try {
+      if (!window.electronAPI) { addToast('Electron API not available (dev mode)', 'error'); return; }
+      const folders = await window.electronAPI.openFolder();
+      if (!folders.length) return;
+      await loadFromPaths(null, folders);
+    } catch (err) {
+      addToast(`Unable to open folder: ${err?.message || 'unknown error'}`, 'error');
+    }
+  }, [addToast, loadFromPaths]);
 
   // ── Open files ───────────────────────────────────────────────────────────
   const handleOpenFiles = useCallback(async () => {
-    if (!window.electronAPI) { addToast('Electron API not available (dev mode)', 'error'); return; }
-    const filePaths = await window.electronAPI.openFiles();
-    if (!filePaths.length) return;
-    await loadFromPaths(filePaths, null);
-  }, []);
+    try {
+      if (!window.electronAPI) { addToast('Electron API not available (dev mode)', 'error'); return; }
+      const filePaths = await window.electronAPI.openFiles();
+      if (!filePaths.length) return;
+      await loadFromPaths(filePaths, null);
+    } catch (err) {
+      addToast(`Unable to open files: ${err?.message || 'unknown error'}`, 'error');
+    }
+  }, [addToast, loadFromPaths]);
 
   // ── Core load routine ────────────────────────────────────────────────────
   const loadFromPaths = useCallback(async (filePaths, folderPaths) => {
@@ -260,13 +268,13 @@ export default function App() {
     <div className="app">
       {/* ── Toolbar ── */}
       <div className="toolbar">
-        <span className="toolbar-title">🎤 KJ File Manager</span>
+        <span className="toolbar-title">🎤 Ironorr-Karaoke-File-System (IKFS)</span>
 
         <button className="btn primary" onClick={handleOpenFolder} disabled={loading} title="Open a folder (all sub-folders are scanned)">
           📂 Open Folder
         </button>
         <button className="btn" onClick={handleOpenFiles} disabled={loading} title="Select individual files">
-          🎵 Add Files
+          🎵 Open Files
         </button>
 
         <div className="toolbar-sep" />
@@ -334,7 +342,7 @@ export default function App() {
             <h2>Ironorr-Karaoke-File-System (IKFS)</h2>
             <p>
               Click <strong>Open Folder</strong> to load a directory of karaoke files, or
-              use <strong>Add Files</strong> to select individual tracks.
+              use <strong>Open Files</strong> to select individual tracks.
               <br /><br />
               Supported formats: MP3, WAV, MP4, MKV, CDG, MP3+G (ZIP), KAR, OGG, FLAC, M4A, WMA
             </p>
@@ -385,9 +393,9 @@ export default function App() {
             {selected.size > 0 && <span>✅ {selected.size} selected</span>}
           </>
         )}
-        <span style={{ marginLeft: 'auto', color: 'var(--text-dim)' }}>
-          Ironorr-Karaoke-File-System (IKFS) — Right-click rows for more options · Ctrl+A to select all · F2 to edit
-        </span>
+        <span style={{ marginLeft: 'auto', color: 'var(--text-dim)' }}
+          >Ironorr-Karaoke-File-System (IKFS) — Right-click rows for more options · Ctrl+A to select all · F2 to edit</span
+        >
       </div>
 
       {/* ── Context menu ── */}
