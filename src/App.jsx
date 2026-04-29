@@ -400,6 +400,7 @@ export default function App() {
 
       {/* ── Main content ── */}
       <div className="grid-area">
+        <img src={logo} alt="" className="grid-watermark" aria-hidden="true" />
         {loading && (
           <div style={{ padding: '8px 12px', background: 'var(--header-bg)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>Loading… {loadProgress}%</span>

@@ -110,6 +110,24 @@ body {
   position: relative;
 }
 
+.grid-watermark {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: min(48vw, 520px);
+  max-height: 70%;
+  object-fit: contain;
+  opacity: 0.09;
+  pointer-events: none;
+  z-index: 0;
+  filter: saturate(0.95);
+}
+
+.grid-area > *:not(.grid-watermark) {
+  position: relative;
+  z-index: 1;
+}
+
 .empty-state {
   flex: 1;
   display: flex;
