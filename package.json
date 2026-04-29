@@ -1,5 +1,5 @@
 {
-  "name": "ironorr-karaoke-file-system-ikfs",
+  "name": "ironorr-karaoke-file-software-ikfs",
   "version": "1.0.4",
   "description": "A cross-platform karaoke file manager with batch tag editing, field shifting, and multi-format support.",
   "main": "electron/main.js",
@@ -23,7 +23,7 @@
   "license": "ISC",
   "build": {
     "appId": "com.ironorr.ikfs",
-    "productName": "Ironorr-Karaoke-File-System (IKFS)",
+    "productName": "IronOrr Karaoke File Software (IKFS)",
     "directories": {
       "output": "release"
     },
