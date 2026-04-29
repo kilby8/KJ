@@ -140,27 +140,48 @@ ipcMain.handle('fs:scanFolders', async (_event, folderPaths) => {
   return files;
 });
 
+function extractDiscIdFromText(text) {
+  const normalized = (text || '').toUpperCase();
+  const patterns = [
+    /\b([A-Z]{2,5})\s*-?\s*(\d{2,5})\s*[-_\s]\s*(\d{1,2})\b/,
+    /\b([A-Z]{2,5})(\d{2,5})[-_\s](\d{1,2})\b/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match) {
+      const brand = match[1];
+      const volume = match[2];
+      const trackNo = match[3].padStart(2, '0');
+      return {
+        discId: `${brand}${volume}-${trackNo}`,
+        raw: match[0],
+      };
+    }
+  }
+
+  return { discId: '', raw: '' };
+}
+
 function parseFromFileName(baseName) {
   const clean = baseName.replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
-  const parts = clean.split(/\s*-\s*/).filter(Boolean);
+  const { discId, raw } = extractDiscIdFromText(clean);
 
-  if (parts.length >= 3) {
-    return {
-      discId: parts[0] || '',
-      artist: parts[1] || '',
-      title: parts.slice(2).join(' - ') || '',
-    };
-  }
+  const withoutDisc = raw
+    ? clean.replace(new RegExp(raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '').replace(/^[-\s]+|[-\s]+$/g, '').trim()
+    : clean;
 
-  if (parts.length === 2) {
+  const parts = withoutDisc.split(/\s+-\s+/).filter(Boolean);
+
+  if (parts.length >= 2) {
     return {
-      discId: '',
+      discId,
       artist: parts[0] || '',
-      title: parts[1] || '',
+      title: parts.slice(1).join(' - ') || '',
     };
   }
 
-  return { discId: '', artist: '', title: clean };
+  return { discId, artist: '', title: withoutDisc };
 }
 
 // ── IPC: Read metadata for a list of file paths ──────────────────────────────
@@ -219,6 +240,10 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
     }
 
     const baseName = path.basename(fp, path.extname(fp));
+
+    if (!discId) {
+      discId = extractDiscIdFromText(baseName).discId;
+    }
 
     if (ext === 'cdg' || ext === 'kar' || (!artist && !title && !discId)) {
       const parsed = parseFromFileName(baseName);
