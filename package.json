@@ -1,0 +1,57 @@
+{
+  "name": "kj-karaoke-file-manager",
+  "version": "1.0.0",
+  "description": "A cross-platform karaoke file manager with batch tag editing, field shifting, and multi-format support.",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && NODE_ENV=development electron .",
+    "build": "vite build",
+    "build:electron": "npm run build && electron-builder",
+    "test": "echo \"No tests configured yet\" && exit 0"
+  },
+  "keywords": ["karaoke", "file-manager", "mp3", "cdg", "electron"],
+  "author": "KJ",
+  "license": "ISC",
+  "build": {
+    "appId": "com.kj.karaoke-file-manager",
+    "productName": "KJ Karaoke File Manager",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.png"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "public/icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "public/icon.png"
+    }
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
+    "vite": "^8.0.10",
+    "wait-on": "^9.0.5"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.17",
+    "music-metadata": "^11.12.3",
+    "node-id3": "^0.2.9",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  }
+}
