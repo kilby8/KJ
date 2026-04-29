@@ -479,7 +479,7 @@ export default function App() {
         >
           {checkingUpdate ? 'Checking…' : 'Check Updates'}
         </button>
-        <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--text-dim)' }}>Created by Kilby</span>
+        <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--text-dim)' }}>Created by Kilby · IronOrr26</span>
       </div>
 
       {/* ── Context menu ── */}
