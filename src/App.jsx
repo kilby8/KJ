@@ -6,6 +6,8 @@ import ToastContainer from './components/ToastContainer';
 import { shiftFieldsLeft, shiftFieldsRight, swapArtistTitle, formatSize } from './utils/fileUtils';
 import { useToasts, useSelection } from './hooks/useSelectionAndToasts';
 
+const logo = '/ikfs-logo.png';
+
 // ── Sorting helper ──────────────────────────────────────────────────────────
 function sortFiles(files, key, dir) {
   if (!key) return files;
@@ -32,6 +34,21 @@ export default function App() {
 
   const { toasts, addToast, removeToast } = useToasts();
 
+  const toShortUpdateMessage = useCallback((message) => {
+    if (!message) return 'unknown error';
+    const oneLine = String(message).replace(/\s+/g, ' ').trim();
+    const cutAt = ['HttpError:', 'at ', '<!DOCTYPE', '<html', '\n'];
+    let short = oneLine;
+    for (const token of cutAt) {
+      const idx = short.indexOf(token);
+      if (idx > 0) {
+        short = short.slice(0, idx).trim();
+      }
+    }
+    if (short.length > 140) short = `${short.slice(0, 137)}...`;
+    return short || 'unknown error';
+  }, []);
+
   useEffect(() => {
     if (!window.electronAPI) return;
 
@@ -56,7 +73,8 @@ export default function App() {
         setUpdateStatus(`Update downloaded: v${payload.version}`);
         setCheckingUpdate(false);
       } else if (status === 'error') {
-        setUpdateStatus(`Update error: ${payload.message || 'unknown'}`);
+        const short = toShortUpdateMessage(payload.message);
+        setUpdateStatus(`Update error: ${short}`);
         setCheckingUpdate(false);
       }
     });
@@ -77,11 +95,11 @@ export default function App() {
     const result = await window.electronAPI.checkForUpdates();
     if (!result?.ok) {
       setCheckingUpdate(false);
-      const message = result?.message || 'Unable to check for updates';
-      setUpdateStatus(message);
+      const message = toShortUpdateMessage(result?.message || 'Unable to check for updates');
+      setUpdateStatus(`Update error: ${message}`);
       addToast(message, 'error');
     }
-  }, [addToast]);
+  }, [addToast, toShortUpdateMessage]);
 
   // ── Filtered + sorted view ────────────────────────────────────────────────
   const displayFiles = useMemo(() => {
@@ -322,7 +340,8 @@ export default function App() {
     <div className="app">
       {/* ── Toolbar ── */}
       <div className="toolbar">
-        <span className="toolbar-title">🎤 IronOrr Karaoke File System (IKFS)</span>
+        <img src={logo} alt="IKFS logo" className="toolbar-logo" />
+        <span className="toolbar-title">IronOrr Karaoke File System (IKFS)</span>
 
         <button className="btn primary" onClick={handleOpenFolder} disabled={loading} title="Open a folder (all sub-folders are scanned)">
           📂 Open Folder
@@ -392,7 +411,7 @@ export default function App() {
 
         {!loading && files.length === 0 ? (
           <div className="empty-state">
-            <div className="icon">🎤</div>
+            <img src={logo} alt="IKFS logo" className="empty-logo" />
             <h2>IronOrr Karaoke File System (IKFS)</h2>
             <p>
               Click <strong>Open Folder</strong> to load a directory of karaoke files, or

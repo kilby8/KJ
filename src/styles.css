@@ -49,6 +49,14 @@ body {
   flex-shrink: 0;
 }
 
+.toolbar-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
 .toolbar-title {
   font-size: 16px;
   font-weight: 700;
@@ -112,6 +120,7 @@ body {
   color: var(--text-dim);
 }
 .empty-state .icon { font-size: 64px; opacity: 0.3; }
+.empty-logo { width: 220px; max-width: 40vw; height: auto; opacity: 0.95; }
 .empty-state h2 { font-size: 20px; color: var(--text); }
 .empty-state p { font-size: 13px; text-align: center; max-width: 400px; line-height: 1.6; }
 
