@@ -122,7 +122,9 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
         artist = meta.common.artist || '';
         title = meta.common.title || '';
         album = meta.common.album || '';
-        discId = (meta.common.comment && meta.common.comment[0]) || '';
+        discId = Array.isArray(meta.common.comment)
+          ? (meta.common.comment[0] || '')
+          : (meta.common.comment || '');
         year = meta.common.year ? String(meta.common.year) : '';
         track = meta.common.track && meta.common.track.no ? String(meta.common.track.no) : '';
       } catch {
@@ -143,7 +145,9 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
             artist = meta.common.artist || '';
             title = meta.common.title || '';
             album = meta.common.album || '';
-            discId = (meta.common.comment && meta.common.comment[0]) || '';
+            discId = Array.isArray(meta.common.comment)
+              ? (meta.common.comment[0] || '')
+              : (meta.common.comment || '');
             year = meta.common.year ? String(meta.common.year) : '';
             track = meta.common.track && meta.common.track.no ? String(meta.common.track.no) : '';
           } catch { /* empty */ }

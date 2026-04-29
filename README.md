@@ -21,16 +21,21 @@ A cross-platform desktop karaoke file manager built with Electron + React. Desig
 | Format | Read Tags | Write Tags |
 |--------|-----------|------------|
 | MP3    | ✅        | ✅         |
-| WAV    | ✅        | —          |
-| MP4    | ✅        | —          |
-| MKV    | ✅        | —          |
-| OGG    | ✅        | —          |
-| FLAC   | ✅        | —          |
-| M4A    | ✅        | —          |
-| WMA    | ✅        | —          |
+| WAV    | ✅        | ⏳ planned  |
+| MP4    | ✅        | ⏳ planned  |
+| MKV    | ✅        | ⏳ planned  |
+| OGG    | ✅        | ⏳ planned  |
+| FLAC   | ✅        | ⏳ planned  |
+| M4A    | ✅        | ⏳ planned  |
+| WMA    | ✅        | ⏳ planned  |
 | CDG    | ✅        | —          |
 | KAR    | ✅        | —          |
 | ZIP (MP3+G) | ✅  | ✅         |
+
+> **Note:** Tag write-back for WAV, MP4, MKV, OGG, FLAC, M4A, and WMA is not yet implemented
+> (no lightweight cross-platform library is included for these formats yet). Edits to those
+> files are previewed in the UI but not persisted to disk. MP3 and MP3+G (ZIP) fully support
+> write-back via `node-id3`.
 
 ## Field Shift Operations
 
