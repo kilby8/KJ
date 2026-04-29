@@ -1,0 +1,33 @@
+.container { padding: 24px; overflow: auto; }
+.heading { font-size: 1.1rem; margin-bottom: 6px; }
+.desc { font-size: 0.85rem; color: var(--color-muted); margin-bottom: 20px; }
+
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.path { font-size: 0.82rem; color: var(--color-muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.btn { padding: 7px 14px; background: var(--color-accent); border: none; border-radius: var(--radius); color: #fff; font-size: 0.8rem; font-weight: 600; }
+.btn:hover { background: var(--color-accent-hl); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+.error { color: var(--color-danger); font-size: 0.85rem; margin-bottom: 12px; }
+
+.results { display: flex; flex-direction: column; gap: 12px; }
+
+.meta { display: flex; gap: 20px; font-size: 0.85rem; color: var(--color-muted); }
+.meta strong { color: var(--color-text); }
+
+.tableWrap { overflow: auto; max-height: 360px; }
+.table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.table th { position: sticky; top: 0; background: var(--color-surface); color: var(--color-muted); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--color-border); text-transform: uppercase; font-size: 0.72rem; }
+.row { border-bottom: 1px solid rgba(255,255,255,0.03); }
+.row:hover { background: rgba(91,106,240,0.07); }
+td { padding: 7px 10px; vertical-align: middle; }
+.mono { font-family: monospace; font-size: 0.78rem; color: var(--color-muted); }
+.raw { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; }
+.empty { text-align: center; padding: 24px; color: var(--color-muted); }
+
+.footer { padding-top: 8px; }
+
+.rawText { margin-top: 12px; font-size: 0.8rem; color: var(--color-muted); }
+.rawText summary { cursor: pointer; }
+.rawText pre { margin-top: 8px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 12px; overflow: auto; max-height: 200px; font-size: 0.75rem; white-space: pre-wrap; }
