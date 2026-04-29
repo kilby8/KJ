@@ -6,7 +6,7 @@ import ToastContainer from './components/ToastContainer';
 import { shiftFieldsLeft, shiftFieldsRight, swapArtistTitle, formatSize } from './utils/fileUtils';
 import { useToasts, useSelection } from './hooks/useSelectionAndToasts';
 
-const logo = '/ikfs-logo.png';
+const logo = `${import.meta.env.BASE_URL}ikfs-logo.png`;
 
 // ── Sorting helper ──────────────────────────────────────────────────────────
 function sortFiles(files, key, dir) {
