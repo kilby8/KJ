@@ -44,8 +44,8 @@ export default function FileSync() {
         template,
         track: { artist: pair.artist, title: pair.title, discId: pair.discId },
         zipPath: pair.zipPath,
-        mp3Entry: pair.mp3 ? pair.mp3.split(':')[1] : undefined,
-        cdgEntry: pair.cdg ? pair.cdg.split(':')[1] : undefined,
+        mp3Entry: pair.mp3?.includes(':') ? pair.mp3.slice(pair.mp3.indexOf(':') + 1) : undefined,
+        cdgEntry: pair.cdg?.includes(':') ? pair.cdg.slice(pair.cdg.indexOf(':') + 1) : undefined,
       }));
 
     if (!operations.length) return;

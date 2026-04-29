@@ -45,7 +45,7 @@ describe('normalizeDelimiters', () => {
 });
 
 describe('toTitleCase', () => {
-  test('capitalises first and last word', () => {
+  test('capitalizes first and last word', () => {
     expect(toTitleCase('the song of the year')).toBe('The Song of the Year');
   });
 
