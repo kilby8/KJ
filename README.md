@@ -15,6 +15,7 @@ A cross-platform desktop karaoke file manager built with Electron + React. Desig
 - **Sortable columns** (click any column header)
 - **Write-back to disk** — changes are saved directly into the file's ID3/metadata tags
 - **MP3+G (ZIP) support** — reads and writes tags inside the inner MP3
+- **Built-in updater** with visible app version and check-for-updates action
 
 ## Supported Formats
 
@@ -36,6 +37,21 @@ A cross-platform desktop karaoke file manager built with Electron + React. Desig
 > (no lightweight cross-platform library is included for these formats yet). Edits to those
 > files are previewed in the UI but not persisted to disk. MP3 and MP3+G (ZIP) fully support
 > write-back via `node-id3`.
+
+## Auto Update Workflow
+
+The app checks for updates in packaged builds (not dev mode) and shows current version/status in the status bar.
+
+To publish an update for installed users:
+
+1. Bump `version` in `package.json` (for example `1.0.0` → `1.0.1`).
+2. Commit and push your code changes.
+3. Set a GitHub token in your shell session:
+   - PowerShell: `$env:GH_TOKEN="<your_token>"`
+4. Run:
+   - `npm run publish:electron`
+5. This uploads installer + update metadata to GitHub Releases for this repository.
+6. Installed users will receive update availability and download/install prompts automatically.
 
 ## Field Shift Operations
 
@@ -67,6 +83,9 @@ npm run build
 
 # Build distributable installer
 npm run build:electron
+
+# Build and publish release artifacts for auto-update
+npm run publish:electron
 ```
 
 ## Tech Stack

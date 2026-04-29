@@ -11,4 +11,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Metadata
   readMetadata: (filePaths) => ipcRenderer.invoke('metadata:read', filePaths),
   writeMetadata: (filePath, tags) => ipcRenderer.invoke('metadata:write', filePath, tags),
+
+  // App / updates
+  getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+  checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
+  onUpdateStatus: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('update:status', handler);
+    return () => ipcRenderer.removeListener('update:status', handler);
+  },
 });

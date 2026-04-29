@@ -26,8 +26,62 @@ export default function App() {
   const [sortDir, setSortDir]     = useState('asc');
   const [contextMenu, setContextMenu] = useState(null); // { x, y, indices }
   const [editTarget, setEditTarget]   = useState(null); // array of file objects
+  const [appVersion, setAppVersion] = useState('dev');
+  const [updateStatus, setUpdateStatus] = useState('');
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   const { toasts, addToast, removeToast } = useToasts();
+
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    let unsubscribe;
+    window.electronAPI.getAppVersion()
+      .then((v) => setAppVersion(v || 'dev'))
+      .catch(() => setAppVersion('dev'));
+
+    unsubscribe = window.electronAPI.onUpdateStatus((payload) => {
+      const status = payload?.status;
+      if (status === 'checking') {
+        setUpdateStatus('Checking updates…');
+        setCheckingUpdate(true);
+      } else if (status === 'available') {
+        setUpdateStatus(`Update available: v${payload.version}`);
+      } else if (status === 'not-available') {
+        setUpdateStatus('Up to date');
+        setCheckingUpdate(false);
+      } else if (status === 'downloading') {
+        setUpdateStatus(`Downloading update… ${payload.percent || 0}%`);
+      } else if (status === 'downloaded') {
+        setUpdateStatus(`Update downloaded: v${payload.version}`);
+        setCheckingUpdate(false);
+      } else if (status === 'error') {
+        setUpdateStatus(`Update error: ${payload.message || 'unknown'}`);
+        setCheckingUpdate(false);
+      }
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  const handleCheckUpdates = useCallback(async () => {
+    if (!window.electronAPI) {
+      addToast('Update check is only available in desktop app', 'info');
+      return;
+    }
+
+    setCheckingUpdate(true);
+    setUpdateStatus('Checking updates…');
+    const result = await window.electronAPI.checkForUpdates();
+    if (!result?.ok) {
+      setCheckingUpdate(false);
+      const message = result?.message || 'Unable to check for updates';
+      setUpdateStatus(message);
+      addToast(message, 'error');
+    }
+  }, [addToast]);
 
   // ── Filtered + sorted view ────────────────────────────────────────────────
   const displayFiles = useMemo(() => {
@@ -394,8 +448,17 @@ export default function App() {
           </>
         )}
         <span style={{ marginLeft: 'auto', color: 'var(--text-dim)' }}
-          >Ironorr-Karaoke-File-System (IKFS) — Right-click rows for more options · Ctrl+A to select all · F2 to edit</span
+          >v{appVersion} · {updateStatus || 'No update check yet'}</span
         >
+        <button
+          className="btn"
+          style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11 }}
+          onClick={handleCheckUpdates}
+          disabled={checkingUpdate}
+          title="Check for updates"
+        >
+          {checkingUpdate ? 'Checking…' : 'Check Updates'}
+        </button>
       </div>
 
       {/* ── Context menu ── */}

@@ -1,9 +1,46 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
 let mainWindow;
+
+function sendUpdateStatus(status, data = {}) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:status', { status, ...data });
+  }
+}
+
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => sendUpdateStatus('checking'));
+  autoUpdater.on('update-available', (info) => sendUpdateStatus('available', { version: info?.version }));
+  autoUpdater.on('update-not-available', () => sendUpdateStatus('not-available'));
+  autoUpdater.on('error', (err) => sendUpdateStatus('error', { message: err?.message || 'Unknown updater error' }));
+  autoUpdater.on('download-progress', (progress) => sendUpdateStatus('downloading', {
+    percent: Math.round(progress?.percent || 0),
+  }));
+
+  autoUpdater.on('update-downloaded', async (info) => {
+    sendUpdateStatus('downloaded', { version: info?.version });
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Update Ready',
+      message: `Version ${info?.version || 'new'} is ready to install.`,
+      detail: 'Restart now to install the update?',
+      buttons: ['Restart Now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -34,6 +71,16 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+
+  if (!isDev) {
+    setupAutoUpdater();
+    setTimeout(() => {
+      autoUpdater.checkForUpdates().catch((err) => {
+        sendUpdateStatus('error', { message: err?.message || 'Failed to check for updates' });
+      });
+    }, 2500);
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -66,11 +113,7 @@ ipcMain.handle('dialog:openFiles', async () => {
   return result.canceled ? [] : result.filePaths;
 });
 
-// ── IPC: Scan a list of folders for supported files ──────────────────────────
-const SUPPORTED_EXT = new Set([
-  'mp3', 'wav', 'mp4', 'mkv', 'cdg', 'zip', 'kar', 'ogg', 'flac', 'm4a', 'wma',
-]);
-
+// ── IPC: Scan a list of folders for files ───────────────────────────────────
 function scanFolder(folderPath, results = []) {
   let entries;
   try {
@@ -83,10 +126,7 @@ function scanFolder(folderPath, results = []) {
     if (entry.isDirectory()) {
       scanFolder(fullPath, results);
     } else if (entry.isFile()) {
-      const ext = path.extname(entry.name).toLowerCase().slice(1);
-      if (SUPPORTED_EXT.has(ext)) {
-        results.push(fullPath);
-      }
+      results.push(fullPath);
     }
   }
   return results;
@@ -99,6 +139,29 @@ ipcMain.handle('fs:scanFolders', async (_event, folderPaths) => {
   }
   return files;
 });
+
+function parseFromFileName(baseName) {
+  const clean = baseName.replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const parts = clean.split(/\s*-\s*/).filter(Boolean);
+
+  if (parts.length >= 3) {
+    return {
+      discId: parts[0] || '',
+      artist: parts[1] || '',
+      title: parts.slice(2).join(' - ') || '',
+    };
+  }
+
+  if (parts.length === 2) {
+    return {
+      discId: '',
+      artist: parts[0] || '',
+      title: parts[1] || '',
+    };
+  }
+
+  return { discId: '', artist: '', title: clean };
+}
 
 // ── IPC: Read metadata for a list of file paths ──────────────────────────────
 ipcMain.handle('metadata:read', async (_event, filePaths) => {
@@ -131,14 +194,13 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
         // leave empty — file may have no tags
       }
     } else if (ext === 'zip') {
-      // MP3+G: try to read the inner mp3's tags
       try {
         const AdmZip = require('adm-zip');
         const zip = new AdmZip(fp);
         const mp3Entry = zip.getEntries().find(e => e.entryName.toLowerCase().endsWith('.mp3'));
         if (mp3Entry) {
           const buf = mp3Entry.getData();
-          const tmpMp3 = path.join(app.getPath('temp'), '__kj_tmp__.mp3');
+          const tmpMp3 = path.join(app.getPath('temp'), '__ikfs_tmp__.mp3');
           fs.writeFileSync(tmpMp3, buf);
           try {
             const meta = await parseFile(tmpMp3, { duration: false, skipCovers: true });
@@ -156,8 +218,14 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
       } catch { /* empty */ }
     }
 
-    // Fall back: try to parse filename like "Artist - Title" or "DiscID - Artist - Title"
     const baseName = path.basename(fp, path.extname(fp));
+
+    if (ext === 'cdg' || ext === 'kar' || (!artist && !title && !discId)) {
+      const parsed = parseFromFileName(baseName);
+      artist = artist || parsed.artist;
+      title = title || parsed.title;
+      discId = discId || parsed.discId;
+    }
 
     results.push({
       filePath: fp,
@@ -199,7 +267,6 @@ ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
   }
 
   if (ext === 'zip') {
-    // Write tags into the inner MP3 within the MP3+G zip
     try {
       const AdmZip = require('adm-zip');
       const NodeID3 = require('node-id3');
@@ -229,7 +296,20 @@ ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
     }
   }
 
-  // For other formats (mp4, wav, etc.) we can't easily write tags without heavy libs;
-  // return a partial-support message.
   return { ok: false, error: `Tag writing not supported for .${ext} files yet` };
+});
+
+// ── IPC: App version and updates ────────────────────────────────────────────
+ipcMain.handle('app:getVersion', async () => app.getVersion());
+ipcMain.handle('app:checkForUpdates', async () => {
+  if (isDev) {
+    return { ok: false, message: 'Updater is disabled in development mode' };
+  }
+
+  try {
+    await autoUpdater.checkForUpdates();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: err?.message || 'Failed to check for updates' };
+  }
 });
