@@ -331,7 +331,7 @@ export default function App() {
         {!loading && files.length === 0 ? (
           <div className="empty-state">
             <div className="icon">🎤</div>
-            <h2>KJ Karaoke File Manager</h2>
+            <h2>Ironorr-Karaoke-File-System (IKFS)</h2>
             <p>
               Click <strong>Open Folder</strong> to load a directory of karaoke files, or
               use <strong>Add Files</strong> to select individual tracks.
@@ -386,7 +386,7 @@ export default function App() {
           </>
         )}
         <span style={{ marginLeft: 'auto', color: 'var(--text-dim)' }}>
-          KJ Karaoke File Manager — Right-click rows for more options · Ctrl+A to select all · F2 to edit
+          Ironorr-Karaoke-File-System (IKFS) — Right-click rows for more options · Ctrl+A to select all · F2 to edit
         </span>
       </div>
 

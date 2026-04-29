@@ -1,5 +1,5 @@
 {
-  "name": "kj-karaoke-file-manager",
+  "name": "ironorr-karaoke-file-system-ikfs",
   "version": "1.0.0",
   "description": "A cross-platform karaoke file manager with batch tag editing, field shifting, and multi-format support.",
   "main": "electron/main.js",
@@ -15,8 +15,8 @@
   "author": "KJ",
   "license": "ISC",
   "build": {
-    "appId": "com.kj.karaoke-file-manager",
-    "productName": "KJ Karaoke File Manager",
+    "appId": "com.ironorr.ikfs",
+    "productName": "Ironorr-Karaoke-File-System (IKFS)",
     "directories": {
       "output": "release"
     },
