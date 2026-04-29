@@ -1,6 +1,6 @@
 {
   "name": "ironorr-karaoke-file-system-ikfs",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A cross-platform karaoke file manager with batch tag editing, field shifting, and multi-format support.",
   "main": "electron/main.js",
   "scripts": {
@@ -37,7 +37,8 @@
       {
         "provider": "github",
         "owner": "kilby8",
-        "repo": "KJ"
+        "repo": "KJ",
+        "releaseType": "release"
       }
     ],
     "win": {
