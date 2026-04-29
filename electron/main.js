@@ -48,7 +48,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'Ironorr-Karaoke-File-System (IKFS)',
+    title: 'IronOrr Karaoke File System (IKFS)',
     icon: path.join(__dirname, '../public/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

@@ -1,4 +1,4 @@
-# Ironorr-Karaoke-File-System (IKFS)
+# IronOrr Karaoke File System (IKFS)
 
 A cross-platform desktop karaoke file manager built with Electron + React. Designed as a modern, open alternative to KJ File Manager.
 

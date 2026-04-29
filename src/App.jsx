@@ -322,7 +322,7 @@ export default function App() {
     <div className="app">
       {/* ── Toolbar ── */}
       <div className="toolbar">
-        <span className="toolbar-title">🎤 Ironorr-Karaoke-File-System (IKFS)</span>
+        <span className="toolbar-title">🎤 IronOrr Karaoke File System (IKFS)</span>
 
         <button className="btn primary" onClick={handleOpenFolder} disabled={loading} title="Open a folder (all sub-folders are scanned)">
           📂 Open Folder
@@ -393,7 +393,7 @@ export default function App() {
         {!loading && files.length === 0 ? (
           <div className="empty-state">
             <div className="icon">🎤</div>
-            <h2>Ironorr-Karaoke-File-System (IKFS)</h2>
+            <h2>IronOrr Karaoke File System (IKFS)</h2>
             <p>
               Click <strong>Open Folder</strong> to load a directory of karaoke files, or
               use <strong>Open Files</strong> to select individual tracks.
