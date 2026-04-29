@@ -58,7 +58,7 @@ export default function App() {
     } catch (err) {
       addToast(`Unable to open folder: ${err?.message || 'unknown error'}`, 'error');
     }
-  }, [addToast, loadFromPaths]);
+  }, []);
 
   // ── Open files ───────────────────────────────────────────────────────────
   const handleOpenFiles = useCallback(async () => {
@@ -70,7 +70,7 @@ export default function App() {
     } catch (err) {
       addToast(`Unable to open files: ${err?.message || 'unknown error'}`, 'error');
     }
-  }, [addToast, loadFromPaths]);
+  }, []);
 
   // ── Core load routine ────────────────────────────────────────────────────
   const loadFromPaths = useCallback(async (filePaths, folderPaths) => {
