@@ -18,7 +18,12 @@
         <div class="price" id="priceLabel">$29.00 one-time</div>
 
         <div class="actions">
-          <button id="buyNowBtn" class="btn primary" type="button">Buy Now (PayPal)</button>
+          <form id="paypalForm" action="https://www.paypal.com/cgi-bin/webscr" method="post" target="_top" style="margin:0; display:inline-flex;">
+            <input type="hidden" name="cmd" value="_s-xclick" />
+            <input id="hostedButtonInput" type="hidden" name="hosted_button_id" value="BQGAWJ7HXGZVE" />
+            <input id="currencyInput" type="hidden" name="currency_code" value="USD" />
+            <button id="buyNowBtn" class="btn primary" type="submit">Buy Now (PayPal)</button>
+          </form>
           <button id="paidBtn" class="btn" type="button">I already paid</button>
         </div>
 
@@ -27,15 +32,15 @@
         <div id="downloadSection" class="download hidden">
           <p class="download-text">Payment confirmed. Download is now enabled:</p>
           <a id="downloadBtn" class="btn success" href="#" target="_blank" rel="noopener noreferrer">Download IKFS</a>
-          <p class="note">Return from PayPal with <code>?token=&lt;order_id&gt;</code> or <code>?order_id=...</code> to auto-verify.</p>
+          <p class="note">Use PayPal return URL with <code>?paid=1</code> for auto-unlock in direct mode.</p>
         </div>
 
         <details class="config-help">
           <summary>Setup notes</summary>
           <ul>
-            <li>Edit <code>paywall.config.js</code> with your API base URL.</li>
-            <li>Backend reads PayPal credentials from environment variables.</li>
-            <li>This mode verifies payment server-side before download unlock.</li>
+            <li>Edit <code>paywall.config.js</code> with your PayPal hosted button id and download URL.</li>
+            <li>In PayPal button settings, set return URL to this page with <code>?paid=1</code>.</li>
+            <li>Backend mode is available via API settings when needed.</li>
           </ul>
         </details>
       </section>

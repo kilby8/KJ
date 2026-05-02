@@ -8,6 +8,9 @@
     status: document.getElementById('status'),
     downloadSection: document.getElementById('downloadSection'),
     downloadBtn: document.getElementById('downloadBtn'),
+    paypalForm: document.getElementById('paypalForm'),
+    hostedButtonInput: document.getElementById('hostedButtonInput'),
+    currencyInput: document.getElementById('currencyInput'),
   };
 
   const storageKey = cfg.storageKey || 'ikfs_download_unlocked';
@@ -23,7 +26,7 @@
   }
 
   function isDirectPayPalMode() {
-    return Boolean(cfg.paypalCheckoutUrl);
+    return Boolean(cfg.paypalHostedButtonId || cfg.paypalCheckoutUrl);
   }
 
   function hasDirectPaidReturn(url) {
@@ -37,8 +40,15 @@
     if (cfg.downloadUrl) els.downloadBtn.href = cfg.downloadUrl;
     else els.downloadBtn.href = '#';
 
-    if (!cfg.paypalCheckoutUrl && !cfg.apiBaseUrl) {
-      setStatus('Configure paypalCheckoutUrl or apiBaseUrl in paywall.config.js');
+    if (cfg.paypalHostedButtonId && els.hostedButtonInput) {
+      els.hostedButtonInput.value = cfg.paypalHostedButtonId;
+    }
+    if (cfg.currency && els.currencyInput) {
+      els.currencyInput.value = cfg.currency;
+    }
+
+    if (!isDirectPayPalMode() && !cfg.apiBaseUrl) {
+      setStatus('Configure paypalHostedButtonId/paypalCheckoutUrl or apiBaseUrl in paywall.config.js');
     }
   }
 
@@ -86,11 +96,20 @@
     setStatus('Payment verified. Download unlocked.');
   }
 
-  els.buyNowBtn.addEventListener('click', async () => {
-    if (cfg.paypalCheckoutUrl) {
-      window.location.href = cfg.paypalCheckoutUrl;
+  if (els.paypalForm) {
+    els.paypalForm.addEventListener('submit', (e) => {
+      if (!isDirectPayPalMode()) {
+        e.preventDefault();
+      }
+    });
+  }
+
+  els.buyNowBtn.addEventListener('click', async (e) => {
+    if (isDirectPayPalMode()) {
       return;
     }
+
+    e.preventDefault();
 
     if (!cfg.apiBaseUrl) {
       setStatus('Missing apiBaseUrl in paywall.config.js');
