@@ -22,9 +22,20 @@
     return (cfg.apiBaseUrl || '').replace(/\/+$/, '');
   }
 
+  function isDirectPayPalMode() {
+    return Boolean(cfg.paypalCheckoutUrl);
+  }
+
+  function hasDirectPaidReturn(url) {
+    const paid = url.searchParams.get('paid');
+    const token = url.searchParams.get('token');
+    return paid === '1' || paid === 'true' || Boolean(token);
+  }
+
   function applyConfig() {
     if (cfg.priceLabel) els.priceLabel.textContent = cfg.priceLabel;
-    els.downloadBtn.href = '#';
+    if (cfg.downloadUrl) els.downloadBtn.href = cfg.downloadUrl;
+    else els.downloadBtn.href = '#';
 
     if (!cfg.paypalCheckoutUrl && !cfg.apiBaseUrl) {
       setStatus('Configure paypalCheckoutUrl or apiBaseUrl in paywall.config.js');
@@ -96,6 +107,12 @@
   });
 
   els.paidBtn.addEventListener('click', async () => {
+    if (isDirectPayPalMode()) {
+      setPayment();
+      updateGate();
+      return;
+    }
+
     const current = new URL(window.location.href);
     const orderId = current.searchParams.get('token') || current.searchParams.get('order_id');
     if (!orderId) {
@@ -114,12 +131,17 @@
     applyConfig();
 
     const current = new URL(window.location.href);
-    const orderId = current.searchParams.get('token') || current.searchParams.get('order_id');
-    if (orderId) {
-      try {
-        await verifyAndUnlock(orderId);
-      } catch {
-        // allow manual retry via button
+    if (isDirectPayPalMode() && hasDirectPaidReturn(current)) {
+      setPayment();
+      setStatus('Payment return detected. Download unlocked.');
+    } else {
+      const orderId = current.searchParams.get('token') || current.searchParams.get('order_id');
+      if (orderId) {
+        try {
+          await verifyAndUnlock(orderId);
+        } catch {
+          // allow manual retry via button
+        }
       }
     }
 
