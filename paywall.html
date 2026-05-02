@@ -18,7 +18,7 @@
         <div class="price" id="priceLabel">$29.00 one-time</div>
 
         <div class="actions">
-          <div id="paypal-hosted-buttons" style="min-width: 220px;"></div>
+          <button id="buyNowBtn" class="btn primary" type="button">Buy Now (PayPal)</button>
           <button id="paidBtn" class="btn" type="button">I already paid</button>
         </div>
 
@@ -27,21 +27,19 @@
         <div id="downloadSection" class="download hidden">
           <p class="download-text">Payment confirmed. Download is now enabled:</p>
           <a id="downloadBtn" class="btn success" href="#" target="_blank" rel="noopener noreferrer">Download IKFS</a>
-          <p class="note">Use PayPal return URL with <code>?paid=1</code> for auto-unlock in direct mode.</p>
+          <p class="note">After checkout, return with <code>?token=&lt;order_id&gt;</code> or <code>?order_id=...</code> to auto-verify.</p>
         </div>
 
         <details class="config-help">
           <summary>Setup notes</summary>
           <ul>
-            <li>Hosted button id is configured in <code>paywall.config.js</code>.</li>
-            <li>This page uses PayPal Hosted Buttons SDK for checkout.</li>
-            <li>Backend mode is available via API settings when needed.</li>
+            <li>Edit <code>paywall.config.js</code> with your API base URL and checkout amount.</li>
+            <li>This mode uses backend PayPal API order creation and verification.</li>
           </ul>
         </details>
       </section>
     </main>
 
-    <script src="https://www.paypal.com/sdk/js?client-id=BAA6b8dkfXaR60iPTS3PkQtZFTePxNU3UYfLIGM65dasMYiDoZruts08ar8Yc_uHfK7cfEdOJGiWRawnVQ&components=hosted-buttons&enable-funding=venmo&currency=USD"></script>
     <script src="paywall.config.js"></script>
     <script src="paywall.js"></script>
   </body>

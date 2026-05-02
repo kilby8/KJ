@@ -130,7 +130,7 @@ Edit `paywall.config.js`:
 
 ### GitHub Pages Deployment
 
-A workflow is included at `.github/workflows/paywall-pages.yml`.
+A workflow is included at `.github/workloads/paywall-pages.yml`.
 
 It publishes the paywall as your Pages root (`index.html`) from these files:
 
@@ -197,11 +197,3 @@ Subscribe to events:
 Add to `.env`:
 
 - `PAYPAL_WEBHOOK_ID`
-
-### Hosted Pay Button
-
-The paywall can render a hosted PayPal button using the hosted button id in `paywall.config.js`:
-
-- `paypalHostedButtonId`
-
-When hosted button mode is enabled, checkout is rendered through PayPal Hosted Buttons SDK on the paywall page.
