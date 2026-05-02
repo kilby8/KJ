@@ -18,13 +18,16 @@
     els.status.textContent = text || '';
   }
 
+  function apiBase() {
+    return (cfg.apiBaseUrl || '').replace(/\/+$/, '');
+  }
+
   function applyConfig() {
     if (cfg.priceLabel) els.priceLabel.textContent = cfg.priceLabel;
-    els.buyNowBtn.href = cfg.paymentUrl || '#';
-    els.downloadBtn.href = cfg.downloadUrl || '#';
+    els.downloadBtn.href = '#';
 
-    if (!cfg.paymentUrl || !cfg.downloadUrl) {
-      setStatus('Configure paymentUrl and downloadUrl in paywall.config.js');
+    if (!cfg.paypalCheckoutUrl && !cfg.apiBaseUrl) {
+      setStatus('Configure paypalCheckoutUrl or apiBaseUrl in paywall.config.js');
     }
   }
 
@@ -36,25 +39,90 @@
     }
   }
 
-  els.buyNowBtn.addEventListener('click', () => {
-    if (!cfg.paymentUrl) {
-      setStatus('Missing payment URL. Update paywall.config.js first.');
-      return;
+  async function createPayPalOrder() {
+    const origin = `${window.location.origin}${window.location.pathname}`;
+    const res = await fetch(`${apiBase()}/api/paypal/order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        origin,
+        amount: cfg.amount,
+        currency: cfg.currency,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data?.ok || !data?.approvalUrl) {
+      throw new Error(data?.error || 'Unable to create PayPal order');
     }
-    setStatus('Complete payment, then return and click “I already paid”.');
-  });
 
-  els.paidBtn.addEventListener('click', () => {
-    setPayment();
-    updateGate();
-  });
-
-  const url = new URL(window.location.href);
-  const paidParam = url.searchParams.get('paid');
-  if (paidParam === '1' || paidParam === 'true') {
-    setPayment();
+    return data.approvalUrl;
   }
 
-  applyConfig();
-  updateGate();
+  async function verifyAndUnlock(orderId) {
+    const url = new URL(`${apiBase()}/api/download/token`);
+    url.searchParams.set('order_id', orderId);
+
+    const res = await fetch(url.toString());
+    const data = await res.json();
+    if (!res.ok || !data?.ok || !data?.token) {
+      throw new Error(data?.error || 'Payment verification failed');
+    }
+
+    setPayment();
+    els.downloadBtn.href = `${apiBase()}/api/download?token=${encodeURIComponent(data.token)}`;
+    updateGate();
+    setStatus('Payment verified. Download unlocked.');
+  }
+
+  els.buyNowBtn.addEventListener('click', async () => {
+    if (cfg.paypalCheckoutUrl) {
+      window.location.href = cfg.paypalCheckoutUrl;
+      return;
+    }
+
+    if (!cfg.apiBaseUrl) {
+      setStatus('Missing apiBaseUrl in paywall.config.js');
+      return;
+    }
+
+    try {
+      setStatus('Opening PayPal checkout…');
+      const approvalUrl = await createPayPalOrder();
+      window.location.href = approvalUrl;
+    } catch (err) {
+      setStatus(err?.message || 'Failed to start PayPal checkout');
+    }
+  });
+
+  els.paidBtn.addEventListener('click', async () => {
+    const current = new URL(window.location.href);
+    const orderId = current.searchParams.get('token') || current.searchParams.get('order_id');
+    if (!orderId) {
+      setStatus('Missing order token in URL. Complete checkout first.');
+      return;
+    }
+
+    try {
+      await verifyAndUnlock(orderId);
+    } catch (err) {
+      setStatus(err?.message || 'Unable to verify payment');
+    }
+  });
+
+  (async function init() {
+    applyConfig();
+
+    const current = new URL(window.location.href);
+    const orderId = current.searchParams.get('token') || current.searchParams.get('order_id');
+    if (orderId) {
+      try {
+        await verifyAndUnlock(orderId);
+      } catch {
+        // allow manual retry via button
+      }
+    }
+
+    updateGate();
+  })();
 })();

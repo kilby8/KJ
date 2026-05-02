@@ -18,23 +18,24 @@
         <div class="price" id="priceLabel">$29.00 one-time</div>
 
         <div class="actions">
-          <a id="buyNowBtn" class="btn primary" href="#" target="_blank" rel="noopener noreferrer">Buy Now</a>
+          <button id="buyNowBtn" class="btn primary" type="button">Buy Now (PayPal)</button>
           <button id="paidBtn" class="btn" type="button">I already paid</button>
         </div>
 
         <div id="status" class="status" aria-live="polite"></div>
 
         <div id="downloadSection" class="download hidden">
-          <p class="download-text">Payment confirmed on your side. Download is now enabled:</p>
+          <p class="download-text">Payment confirmed. Download is now enabled:</p>
           <a id="downloadBtn" class="btn success" href="#" target="_blank" rel="noopener noreferrer">Download IKFS</a>
-          <p class="note">If your payment processor supports redirects, point success URL back to this page.</p>
+          <p class="note">Return from PayPal with <code>?token=&lt;order_id&gt;</code> or <code>?order_id=...</code> to auto-verify.</p>
         </div>
 
         <details class="config-help">
           <summary>Setup notes</summary>
           <ul>
-            <li>Edit <code>paywall.config.js</code> with your payment and download URLs.</li>
-            <li>This page does not verify payment server-side. Use backend verification for strict enforcement.</li>
+            <li>Edit <code>paywall.config.js</code> with your API base URL.</li>
+            <li>Backend reads PayPal credentials from environment variables.</li>
+            <li>This mode verifies payment server-side before download unlock.</li>
           </ul>
         </details>
       </section>

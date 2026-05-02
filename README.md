@@ -111,21 +111,22 @@ A standalone page is included to gate downloads behind payment:
 Edit `paywall.config.js`:
 
 - `priceLabel`: text shown on page
-- `paymentUrl`: checkout URL (Stripe/PayPal/etc.)
-- `downloadUrl`: installer/artifact URL
+- `apiBaseUrl`: backend API base URL (example: `http://localhost:8787`)
+- `amount`: checkout amount sent to backend order creation
+- `currency`: checkout currency code (example: `USD`)
 - `storageKey`: local browser key for unlocked state
 
 ### Flow
 
-1. User clicks **Buy Now** and completes payment on your processor page.
-2. User returns to `paywall.html` and clicks **I already paid**.
-3. Download button becomes available in that browser.
+1. User clicks **Buy Now (PayPal)**.
+2. Frontend calls `POST /api/paypal/order`.
+3. Backend creates PayPal order and returns `approvalUrl`.
+4. Browser redirects to PayPal for approval.
+5. User returns to paywall with `?token=<order_id>` or `?order_id=<order_id>`.
+6. Frontend verifies payment with `GET /api/download/token?order_id=...`.
+7. Frontend receives signed token and enables `GET /api/download?token=...`.
 
-You can also auto-unlock with a redirect parameter:
-
-- `paywall.html?paid=1`
-
-> Note: This is a client-side gate for simple deployments. For strict paywall enforcement, validate payment server-side and issue signed/expiring download URLs.
+> Note: This mode verifies payment server-side before unlocking download access.
 
 ### GitHub Pages Deployment
 
@@ -147,3 +148,37 @@ It publishes the paywall as your Pages root (`index.html`) from these files:
 Your paywall URL will be:
 
 - `https://<owner>.github.io/<repo>/`
+
+### PayPal API Secure Mode (Server-Verified)
+
+The paywall backend can verify PayPal payments before issuing a short-lived download token.
+
+#### 1) Install dependencies
+
+```bash
+npm install
+```
+
+#### 2) Configure environment
+
+Copy `.env.example` to `.env` and set values:
+
+- `PAYPAL_CLIENT_ID`
+- `PAYPAL_CLIENT_SECRET`
+- `DOWNLOAD_FILE_PATH`
+- `TOKEN_SECRET`
+- optional: `PAYPAL_ENV`, `PAYPAL_API_BASE`, `PAYWALL_SUCCESS_URL`, `PAYWALL_CANCEL_URL`, `PAYWALL_ORIGIN`, `PAYPAL_AMOUNT`, `PAYPAL_CURRENCY`, `PORT`, `TOKEN_TTL_SECONDS`
+
+#### 3) Start secure paywall API
+
+```bash
+npm run paywall:server
+```
+
+#### 4) API flow
+
+1. Frontend calls `POST /api/paypal/order`.
+2. Backend creates PayPal order and returns approval URL.
+3. Buyer completes PayPal approval/capture flow.
+4. Frontend verifies with backend (`GET /api/download/token?order_id=...`).
+5. Frontend receives signed token and downloads via `GET /api/download?token=...`.
