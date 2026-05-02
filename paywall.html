@@ -18,12 +18,7 @@
         <div class="price" id="priceLabel">$29.00 one-time</div>
 
         <div class="actions">
-          <form id="paypalForm" action="https://www.paypal.com/cgi-bin/webscr" method="post" target="_top" style="margin:0; display:inline-flex;">
-            <input type="hidden" name="cmd" value="_s-xclick" />
-            <input id="hostedButtonInput" type="hidden" name="hosted_button_id" value="BQGAWJ7HXGZVE" />
-            <input id="currencyInput" type="hidden" name="currency_code" value="USD" />
-            <button id="buyNowBtn" class="btn primary" type="submit">Buy Now (PayPal)</button>
-          </form>
+          <div id="paypal-hosted-buttons" style="min-width: 220px;"></div>
           <button id="paidBtn" class="btn" type="button">I already paid</button>
         </div>
 
@@ -38,14 +33,15 @@
         <details class="config-help">
           <summary>Setup notes</summary>
           <ul>
-            <li>Edit <code>paywall.config.js</code> with your PayPal hosted button id and download URL.</li>
-            <li>In PayPal button settings, set return URL to this page with <code>?paid=1</code>.</li>
+            <li>Hosted button id is configured in <code>paywall.config.js</code>.</li>
+            <li>This page uses PayPal Hosted Buttons SDK for checkout.</li>
             <li>Backend mode is available via API settings when needed.</li>
           </ul>
         </details>
       </section>
     </main>
 
+    <script src="https://www.paypal.com/sdk/js?client-id=BAA6b8dkfXaR60iPTS3PkQtZFTePxNU3UYfLIGM65dasMYiDoZruts08ar8Yc_uHfK7cfEdOJGiWRawnVQ&components=hosted-buttons&enable-funding=venmo&currency=USD"></script>
     <script src="paywall.config.js"></script>
     <script src="paywall.js"></script>
   </body>

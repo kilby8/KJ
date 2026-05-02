@@ -8,9 +8,7 @@
     status: document.getElementById('status'),
     downloadSection: document.getElementById('downloadSection'),
     downloadBtn: document.getElementById('downloadBtn'),
-    paypalForm: document.getElementById('paypalForm'),
-    hostedButtonInput: document.getElementById('hostedButtonInput'),
-    currencyInput: document.getElementById('currencyInput'),
+    paypalHostedButtons: document.getElementById('paypal-hosted-buttons'),
   };
 
   const storageKey = cfg.storageKey || 'ikfs_download_unlocked';
@@ -40,15 +38,22 @@
     if (cfg.downloadUrl) els.downloadBtn.href = cfg.downloadUrl;
     else els.downloadBtn.href = '#';
 
-    if (cfg.paypalHostedButtonId && els.hostedButtonInput) {
-      els.hostedButtonInput.value = cfg.paypalHostedButtonId;
-    }
-    if (cfg.currency && els.currencyInput) {
-      els.currencyInput.value = cfg.currency;
-    }
-
     if (!isDirectPayPalMode() && !cfg.apiBaseUrl) {
       setStatus('Configure paypalHostedButtonId/paypalCheckoutUrl or apiBaseUrl in paywall.config.js');
+    }
+  }
+
+  async function renderHostedButtons() {
+    if (!cfg.paypalHostedButtonId || !els.paypalHostedButtons || !window.paypal?.HostedButtons) {
+      return;
+    }
+
+    try {
+      await window.paypal.HostedButtons({
+        hostedButtonId: cfg.paypalHostedButtonId,
+      }).render('#paypal-hosted-buttons');
+    } catch {
+      setStatus('Unable to render PayPal hosted button.');
     }
   }
 
@@ -96,34 +101,28 @@
     setStatus('Payment verified. Download unlocked.');
   }
 
-  if (els.paypalForm) {
-    els.paypalForm.addEventListener('submit', (e) => {
-      if (!isDirectPayPalMode()) {
-        e.preventDefault();
+  if (els.buyNowBtn) {
+    els.buyNowBtn.addEventListener('click', async (e) => {
+      if (isDirectPayPalMode()) {
+        return;
+      }
+
+      e.preventDefault();
+
+      if (!cfg.apiBaseUrl) {
+        setStatus('Missing apiBaseUrl in paywall.config.js');
+        return;
+      }
+
+      try {
+        setStatus('Opening PayPal checkout…');
+        const approvalUrl = await createPayPalOrder();
+        window.location.href = approvalUrl;
+      } catch (err) {
+        setStatus(err?.message || 'Failed to start PayPal checkout');
       }
     });
   }
-
-  els.buyNowBtn.addEventListener('click', async (e) => {
-    if (isDirectPayPalMode()) {
-      return;
-    }
-
-    e.preventDefault();
-
-    if (!cfg.apiBaseUrl) {
-      setStatus('Missing apiBaseUrl in paywall.config.js');
-      return;
-    }
-
-    try {
-      setStatus('Opening PayPal checkout…');
-      const approvalUrl = await createPayPalOrder();
-      window.location.href = approvalUrl;
-    } catch (err) {
-      setStatus(err?.message || 'Failed to start PayPal checkout');
-    }
-  });
 
   els.paidBtn.addEventListener('click', async () => {
     if (isDirectPayPalMode()) {
@@ -148,6 +147,7 @@
 
   (async function init() {
     applyConfig();
+    await renderHostedButtons();
 
     const current = new URL(window.location.href);
     if (isDirectPayPalMode() && hasDirectPaidReturn(current)) {

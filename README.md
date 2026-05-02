@@ -182,3 +182,26 @@ npm run paywall:server
 3. Buyer completes PayPal approval/capture flow.
 4. Frontend verifies with backend (`GET /api/download/token?order_id=...`).
 5. Frontend receives signed token and downloads via `GET /api/download?token=...`.
+
+### Webhook Setup (PayPal)
+
+Configure a webhook in the PayPal Developer Dashboard pointing to:
+
+- `https://<your-api-domain>/api/paypal/webhook`
+
+Subscribe to events:
+
+- `CHECKOUT.ORDER.COMPLETED`
+- `PAYMENT.CAPTURE.COMPLETED`
+
+Add to `.env`:
+
+- `PAYPAL_WEBHOOK_ID`
+
+### Hosted Pay Button
+
+The paywall can render a hosted PayPal button using the hosted button id in `paywall.config.js`:
+
+- `paypalHostedButtonId`
+
+When hosted button mode is enabled, checkout is rendered through PayPal Hosted Buttons SDK on the paywall page.

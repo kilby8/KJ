@@ -11,6 +11,7 @@ const {
   PAYPAL_CLIENT_SECRET,
   PAYPAL_ENV = 'live',
   PAYPAL_API_BASE,
+  PAYPAL_WEBHOOK_ID,
   PAYWALL_SUCCESS_URL,
   PAYWALL_CANCEL_URL,
   PAYWALL_ORIGIN,
@@ -34,6 +35,8 @@ if (!fs.existsSync(absoluteDownloadPath)) {
 const paypalBase = PAYPAL_API_BASE || (PAYPAL_ENV === 'sandbox'
   ? 'https://api-m.sandbox.paypal.com'
   : 'https://api-m.paypal.com');
+
+const paidOrders = new Map();
 
 const app = express();
 
@@ -83,6 +86,17 @@ function verifyToken(token) {
   return data;
 }
 
+function markOrderPaid(orderId, source) {
+  if (!orderId) return;
+  paidOrders.set(orderId, { source, at: Date.now() });
+}
+
+function createDownloadToken(orderId) {
+  const exp = Date.now() + Number(TOKEN_TTL_SECONDS) * 1000;
+  const token = signToken({ oid: orderId, exp });
+  return { token, expiresAt: exp };
+}
+
 async function getPayPalAccessToken() {
   const basic = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
   const res = await fetch(`${paypalBase}/v1/oauth2/token`, {
@@ -100,6 +114,40 @@ async function getPayPalAccessToken() {
   }
 
   return data.access_token;
+}
+
+async function getPayPalOrder(orderId, accessToken) {
+  const res = await fetch(`${paypalBase}/v2/checkout/orders/${orderId}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data?.id) {
+    throw new Error(data?.message || 'Unable to fetch PayPal order');
+  }
+
+  return data;
+}
+
+async function capturePayPalOrder(orderId, accessToken) {
+  const res = await fetch(`${paypalBase}/v2/checkout/orders/${orderId}/capture`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok || data?.status !== 'COMPLETED') {
+    throw new Error(data?.message || 'PayPal capture was not completed');
+  }
+
+  return data;
 }
 
 function resolveSuccessUrl(origin) {
@@ -146,10 +194,57 @@ app.post('/api/paypal/order', async (req, res) => {
       return res.status(400).json({ ok: false, error: order?.message || 'Failed to create PayPal order' });
     }
 
-    const approvalUrl = (order.links || []).find(l => l.rel === 'approve')?.href;
+    const approvalUrl = (order.links || []).find((l) => l.rel === 'approve')?.href;
     return res.json({ ok: true, orderId: order.id, approvalUrl });
   } catch (err) {
     return res.status(400).json({ ok: false, error: err.message || 'Unable to create PayPal order' });
+  }
+});
+
+app.post('/api/paypal/webhook', async (req, res) => {
+  if (!PAYPAL_WEBHOOK_ID) {
+    return res.status(500).json({ ok: false, error: 'Missing PAYPAL_WEBHOOK_ID' });
+  }
+
+  try {
+    const accessToken = await getPayPalAccessToken();
+    const verifyRes = await fetch(`${paypalBase}/v1/notifications/verify-webhook-signature`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        auth_algo: req.get('paypal-auth-algo'),
+        cert_url: req.get('paypal-cert-url'),
+        transmission_id: req.get('paypal-transmission-id'),
+        transmission_sig: req.get('paypal-transmission-sig'),
+        transmission_time: req.get('paypal-transmission-time'),
+        webhook_id: PAYPAL_WEBHOOK_ID,
+        webhook_event: req.body,
+      }),
+    });
+
+    const verify = await verifyRes.json();
+    if (!verifyRes.ok || verify?.verification_status !== 'SUCCESS') {
+      return res.status(400).json({ ok: false, error: 'Invalid PayPal webhook signature' });
+    }
+
+    const eventType = req.body?.event_type;
+    const resource = req.body?.resource || {};
+
+    if (eventType === 'CHECKOUT.ORDER.COMPLETED') {
+      markOrderPaid(resource.id, 'webhook:order-completed');
+    }
+
+    if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
+      const orderId = resource?.supplementary_data?.related_ids?.order_id;
+      markOrderPaid(orderId, 'webhook:capture-completed');
+    }
+
+    return res.json({ ok: true, received: true });
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message || 'Failed webhook processing' });
   }
 });
 
@@ -158,24 +253,28 @@ app.get('/api/download/token', async (req, res) => {
   if (!orderId) return res.status(400).json({ ok: false, error: 'Missing order_id' });
 
   try {
-    const accessToken = await getPayPalAccessToken();
-
-    const captureRes = await fetch(`${paypalBase}/v2/checkout/orders/${orderId}/capture`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    const capture = await captureRes.json();
-    if (!captureRes.ok || capture?.status !== 'COMPLETED') {
-      return res.status(403).json({ ok: false, error: capture?.message || 'Payment not completed' });
+    if (paidOrders.has(orderId)) {
+      const { token, expiresAt } = createDownloadToken(orderId);
+      return res.json({ ok: true, token, expiresAt, source: 'webhook-cache' });
     }
 
-    const exp = Date.now() + Number(TOKEN_TTL_SECONDS) * 1000;
-    const token = signToken({ oid: orderId, exp });
-    return res.json({ ok: true, token, expiresAt: exp });
+    const accessToken = await getPayPalAccessToken();
+    const order = await getPayPalOrder(orderId, accessToken);
+
+    if (order.status === 'COMPLETED') {
+      markOrderPaid(orderId, 'order-status-completed');
+      const { token, expiresAt } = createDownloadToken(orderId);
+      return res.json({ ok: true, token, expiresAt, source: 'order-status' });
+    }
+
+    if (order.status === 'APPROVED') {
+      await capturePayPalOrder(orderId, accessToken);
+      markOrderPaid(orderId, 'captured-on-verify');
+      const { token, expiresAt } = createDownloadToken(orderId);
+      return res.json({ ok: true, token, expiresAt, source: 'capture' });
+    }
+
+    return res.status(403).json({ ok: false, error: 'Payment not completed' });
   } catch (err) {
     return res.status(400).json({ ok: false, error: err.message || 'Unable to verify PayPal payment' });
   }
@@ -190,7 +289,7 @@ app.get('/api/download', (req, res) => {
 });
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, provider: 'paypal' });
+  res.json({ ok: true, provider: 'paypal', webhookConfigured: Boolean(PAYPAL_WEBHOOK_ID) });
 });
 
 app.listen(Number(PORT), () => {
