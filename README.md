@@ -96,3 +96,54 @@ npm run publish:electron
 - **music-metadata** — read audio/video tags (MP3, FLAC, OGG, MP4, etc.)
 - **node-id3** — write ID3 tags to MP3 and MP3+G files
 - **adm-zip** — read/write MP3+G zip archives
+
+## Web Paywall Page (Before Download)
+
+A standalone page is included to gate downloads behind payment:
+
+- `paywall.html`
+- `paywall.css`
+- `paywall.config.js`
+- `paywall.js`
+
+### Configure
+
+Edit `paywall.config.js`:
+
+- `priceLabel`: text shown on page
+- `paymentUrl`: checkout URL (Stripe/PayPal/etc.)
+- `downloadUrl`: installer/artifact URL
+- `storageKey`: local browser key for unlocked state
+
+### Flow
+
+1. User clicks **Buy Now** and completes payment on your processor page.
+2. User returns to `paywall.html` and clicks **I already paid**.
+3. Download button becomes available in that browser.
+
+You can also auto-unlock with a redirect parameter:
+
+- `paywall.html?paid=1`
+
+> Note: This is a client-side gate for simple deployments. For strict paywall enforcement, validate payment server-side and issue signed/expiring download URLs.
+
+### GitHub Pages Deployment
+
+A workflow is included at `.github/workflows/paywall-pages.yml`.
+
+It publishes the paywall as your Pages root (`index.html`) from these files:
+
+- `paywall.html` (published as `index.html`)
+- `paywall.css`
+- `paywall.js`
+- `paywall.config.js`
+
+#### Enable Pages in GitHub
+
+1. Open repository settings → **Pages**.
+2. For **Build and deployment**, choose **GitHub Actions** as source.
+3. Push to `main` (or run the workflow manually).
+
+Your paywall URL will be:
+
+- `https://<owner>.github.io/<repo>/`

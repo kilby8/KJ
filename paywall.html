@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IKFS Download Access</title>
+    <link rel="stylesheet" href="paywall.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="card">
+        <p class="eyebrow">IronOrr Karaoke File Software (IKFS)</p>
+        <h1>Download Access</h1>
+        <p class="subtitle">
+          Complete payment to unlock your download link.
+        </p>
+
+        <div class="price" id="priceLabel">$29.00 one-time</div>
+
+        <div class="actions">
+          <a id="buyNowBtn" class="btn primary" href="#" target="_blank" rel="noopener noreferrer">Buy Now</a>
+          <button id="paidBtn" class="btn" type="button">I already paid</button>
+        </div>
+
+        <div id="status" class="status" aria-live="polite"></div>
+
+        <div id="downloadSection" class="download hidden">
+          <p class="download-text">Payment confirmed on your side. Download is now enabled:</p>
+          <a id="downloadBtn" class="btn success" href="#" target="_blank" rel="noopener noreferrer">Download IKFS</a>
+          <p class="note">If your payment processor supports redirects, point success URL back to this page.</p>
+        </div>
+
+        <details class="config-help">
+          <summary>Setup notes</summary>
+          <ul>
+            <li>Edit <code>paywall.config.js</code> with your payment and download URLs.</li>
+            <li>This page does not verify payment server-side. Use backend verification for strict enforcement.</li>
+          </ul>
+        </details>
+      </section>
+    </main>
+
+    <script src="paywall.config.js"></script>
+    <script src="paywall.js"></script>
+  </body>
+</html>
