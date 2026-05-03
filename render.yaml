@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: ikfs-paywall-api
+    runtime: node
+    plan: starter
+    autoDeploy: true
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm run paywall:server
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: PORT
+        value: "10000"
+      - key: PAYPAL_ENV
+        value: live
+      - key: PAYPAL_AMOUNT
+        value: "29.00"
+      - key: PAYPAL_CURRENCY
+        value: USD
+      - key: TOKEN_TTL_SECONDS
+        value: "900"
+      - key: PAYWALL_SUCCESS_URL
+        value: https://kilby8.github.io/KJ/?token={ORDER_ID}
+      - key: PAYWALL_CANCEL_URL
+        value: https://kilby8.github.io/KJ/?canceled=1
+      - key: PAYWALL_ORIGIN
+        value: https://kilby8.github.io
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: DOWNLOAD_FILE_PATH
+        sync: false
+      - key: TOKEN_SECRET
+        sync: false
