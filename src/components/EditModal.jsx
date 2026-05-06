@@ -6,14 +6,15 @@ import React, { useState, useEffect } from 'react';
  */
 export default function EditModal({ files, onSave, onClose }) {
   const isBulk = files.length > 1;
+  const asText = (v) => (v == null ? '' : String(v));
 
   const [form, setForm] = useState({
-    artist:  isBulk ? '' : (files[0]?.artist  || ''),
-    title:   isBulk ? '' : (files[0]?.title   || ''),
-    album:   isBulk ? '' : (files[0]?.album   || ''),
-    discId:  isBulk ? '' : (files[0]?.discId  || ''),
-    year:    isBulk ? '' : (files[0]?.year    || ''),
-    track:   isBulk ? '' : (files[0]?.track   || ''),
+    artist:  isBulk ? '' : asText(files[0]?.artist),
+    title:   isBulk ? '' : asText(files[0]?.title),
+    album:   isBulk ? '' : asText(files[0]?.album),
+    discId:  isBulk ? '' : asText(files[0]?.discId),
+    year:    isBulk ? '' : asText(files[0]?.year),
+    track:   isBulk ? '' : asText(files[0]?.track),
   });
 
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
@@ -23,12 +24,13 @@ export default function EditModal({ files, onSave, onClose }) {
     if (isBulk) {
       const patch = {};
       for (const [k, v] of Object.entries(form)) {
-        if (v.trim() !== '') patch[k] = v.trim();
+        const trimmed = asText(v).trim();
+        if (trimmed !== '') patch[k] = trimmed;
       }
       onSave(files, patch);
     } else {
       const trimmed = {};
-      for (const [k, v] of Object.entries(form)) trimmed[k] = v.trim();
+      for (const [k, v] of Object.entries(form)) trimmed[k] = asText(v).trim();
       onSave(files, trimmed);
     }
     onClose();

@@ -130,7 +130,7 @@ Edit `paywall.config.js`:
 
 ### GitHub Pages Deployment
 
-A workflow is included at `.github/workloads/paywall-pages.yml`.
+A workflow is included at `.github/workflows/paywall-pages.yml`.
 
 It publishes the paywall as your Pages root (`index.html`) from these files:
 
@@ -148,6 +148,29 @@ It publishes the paywall as your Pages root (`index.html`) from these files:
 Your paywall URL will be:
 
 - `https://<owner>.github.io/<repo>/`
+
+### Deploy API to Render
+
+A Render blueprint is included at `render.yaml` for the paywall API service.
+
+#### Render setup
+
+1. In Render, create a new Blueprint service from this repository.
+2. Confirm service name and region, then deploy.
+3. Set required secret env vars in Render dashboard:
+   - `PAYPAL_CLIENT_ID`
+   - `PAYPAL_CLIENT_SECRET`
+   - `PAYPAL_WEBHOOK_ID`
+   - `DOWNLOAD_FILE_PATH`
+   - `TOKEN_SECRET`
+4. Verify API health endpoint:
+   - `https://<your-render-service>.onrender.com/api/health`
+
+#### PayPal webhook target
+
+After Render deploy, configure PayPal webhook URL to:
+
+- `https://<your-render-service>.onrender.com/api/paypal/webhook`
 
 ### PayPal API Secure Mode (Server-Verified)
 

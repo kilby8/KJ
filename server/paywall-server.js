@@ -29,7 +29,7 @@ if (!TOKEN_SECRET) throw new Error('Missing TOKEN_SECRET');
 
 const absoluteDownloadPath = path.resolve(DOWNLOAD_FILE_PATH);
 if (!fs.existsSync(absoluteDownloadPath)) {
-  throw new Error(`DOWNLOAD_FILE_PATH does not exist: ${absoluteDownloadPath}`);
+  console.warn(`Warning: DOWNLOAD_FILE_PATH does not exist at startup: ${absoluteDownloadPath}`);
 }
 
 const paypalBase = PAYPAL_API_BASE || (PAYPAL_ENV === 'sandbox'
@@ -284,6 +284,10 @@ app.get('/api/download', (req, res) => {
   const token = req.query.token;
   const parsed = verifyToken(token);
   if (!parsed) return res.status(403).json({ ok: false, error: 'Invalid or expired token' });
+
+  if (!absoluteDownloadPath || !fs.existsSync(absoluteDownloadPath)) {
+    return res.status(503).json({ ok: false, error: 'Download file not configured on server' });
+  }
 
   return res.download(absoluteDownloadPath, path.basename(absoluteDownloadPath));
 });

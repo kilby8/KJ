@@ -11,6 +11,7 @@
   };
 
   const storageKey = cfg.storageKey || 'ikfs_download_unlocked';
+  const apiStorageKey = `${storageKey}_api_base`;
   const hasPayment = () => localStorage.getItem(storageKey) === '1';
   const setPayment = () => localStorage.setItem(storageKey, '1');
 
@@ -18,15 +19,34 @@
     els.status.textContent = text || '';
   }
 
+  function resolveApiBase() {
+    const current = new URL(window.location.href);
+    const queryApi = current.searchParams.get('api');
+    if (queryApi) {
+      localStorage.setItem(apiStorageKey, queryApi);
+      return queryApi;
+    }
+    return localStorage.getItem(apiStorageKey) || cfg.apiBaseUrl || '';
+  }
+
   function apiBase() {
-    return (cfg.apiBaseUrl || '').replace(/\/+$/, '');
+    return resolveApiBase().replace(/\/+$/, '');
+  }
+
+  async function readJsonOrThrow(res, fallbackMessage) {
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+      throw new Error(`${fallbackMessage} (non-JSON response: ${res.status}${text ? ` ${text.slice(0, 80)}` : ''})`);
+    }
+    return res.json();
   }
 
   function applyConfig() {
     if (cfg.priceLabel) els.priceLabel.textContent = cfg.priceLabel;
     els.downloadBtn.href = '#';
 
-    if (!cfg.apiBaseUrl) {
+    if (!apiBase()) {
       setStatus('Configure apiBaseUrl in paywall.config.js');
     }
   }
@@ -41,19 +61,26 @@
 
   async function createPayPalOrder() {
     const origin = `${window.location.origin}${window.location.pathname}`;
-    const res = await fetch(`${apiBase()}/api/paypal/order`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        origin,
-        amount: cfg.amount,
-        currency: cfg.currency,
-      }),
-    });
+    const endpoint = `${apiBase()}/api/paypal/order`;
 
-    const data = await res.json();
+    let res;
+    try {
+      res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin,
+          amount: cfg.amount,
+          currency: cfg.currency,
+        }),
+      });
+    } catch {
+      throw new Error(`Failed to reach API at ${endpoint}`);
+    }
+
+    const data = await readJsonOrThrow(res, 'Unable to create PayPal order');
     if (!res.ok || !data?.ok || !data?.approvalUrl) {
-      throw new Error(data?.error || 'Unable to create PayPal order');
+      throw new Error(data?.error || `Unable to create PayPal order (${res.status})`);
     }
 
     return data.approvalUrl;
@@ -63,10 +90,16 @@
     const url = new URL(`${apiBase()}/api/download/token`);
     url.searchParams.set('order_id', orderId);
 
-    const res = await fetch(url.toString());
-    const data = await res.json();
+    let res;
+    try {
+      res = await fetch(url.toString());
+    } catch {
+      throw new Error(`Failed to reach API at ${url.origin}`);
+    }
+
+    const data = await readJsonOrThrow(res, 'Payment verification failed');
     if (!res.ok || !data?.ok || !data?.token) {
-      throw new Error(data?.error || 'Payment verification failed');
+      throw new Error(data?.error || `Payment verification failed (${res.status})`);
     }
 
     setPayment();
@@ -76,7 +109,7 @@
   }
 
   els.buyNowBtn.addEventListener('click', async () => {
-    if (!cfg.apiBaseUrl) {
+    if (!apiBase()) {
       setStatus('Missing apiBaseUrl in paywall.config.js');
       return;
     }
