@@ -2,9 +2,18 @@ const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
 let mainWindow;
+let ffmpegBinaryPath = process.env.FFMPEG_PATH || null;
+if (!ffmpegBinaryPath) {
+  try {
+    ffmpegBinaryPath = require('ffmpeg-static');
+  } catch {
+    ffmpegBinaryPath = null;
+  }
+}
 
 function sendUpdateStatus(status, data = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -270,6 +279,97 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
 });
 
 // ── IPC: Write metadata back to file ─────────────────────────────────────────
+function normalizeTagValue(value) {
+  if (value === undefined || value === null) return '';
+  return String(value).trim();
+}
+
+function metadataPairsForExt(tags, ext) {
+  const artist = normalizeTagValue(tags.artist);
+  const title = normalizeTagValue(tags.title);
+  const album = normalizeTagValue(tags.album);
+  const year = normalizeTagValue(tags.year);
+  const track = normalizeTagValue(tags.track);
+  const discId = normalizeTagValue(tags.discId);
+
+  const pairs = [];
+  if (artist) pairs.push(['artist', artist]);
+  if (title) pairs.push(['title', title]);
+  if (album) pairs.push(['album', album]);
+  if (year) {
+    pairs.push(['date', year]);
+    if (ext === 'flac' || ext === 'ogg' || ext === 'wav') pairs.push(['year', year]);
+  }
+  if (track) pairs.push(['track', track]);
+  if (discId) pairs.push(['comment', discId]);
+
+  if (ext === 'wma' && artist) {
+    pairs.push(['WM/AlbumArtist', artist]);
+  }
+
+  return pairs;
+}
+
+function runFfmpeg(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpegBinaryPath, args, { windowsHide: true });
+    let stderr = '';
+
+    child.stderr.on('data', (d) => { stderr += d.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
+    });
+  });
+}
+
+async function replaceFileAtomic(tmpPath, finalPath) {
+  try {
+    await fs.promises.rename(tmpPath, finalPath);
+  } catch (err) {
+    if (err?.code === 'EXDEV' || err?.code === 'EEXIST' || err?.code === 'EPERM') {
+      await fs.promises.copyFile(tmpPath, finalPath);
+      await fs.promises.unlink(tmpPath).catch(() => {});
+      return;
+    }
+    throw err;
+  }
+}
+
+async function writeMetadataWithFfmpeg(filePath, tags, ext) {
+  if (!ffmpegBinaryPath) {
+    return { ok: false, error: 'FFmpeg binary not found. Install ffmpeg-static or set FFMPEG_PATH.' };
+  }
+
+  const dir = path.dirname(filePath);
+  try {
+    await fs.promises.access(dir, fs.constants.W_OK);
+  } catch {
+    return { ok: false, error: `No write permission for folder: ${dir}` };
+  }
+
+  const tmpPath = path.join(
+    dir,
+    `${path.basename(filePath, path.extname(filePath))}.ikfs-tmp-${Date.now()}${path.extname(filePath)}`,
+  );
+
+  const ffArgs = ['-y', '-i', filePath, '-map', '0', '-c', 'copy'];
+  for (const [k, v] of metadataPairsForExt(tags, ext)) {
+    ffArgs.push('-metadata', `${k}=${v}`);
+  }
+  ffArgs.push(tmpPath);
+
+  try {
+    await runFfmpeg(ffArgs);
+    await replaceFileAtomic(tmpPath, filePath);
+    return { ok: true };
+  } catch (err) {
+    await fs.promises.unlink(tmpPath).catch(() => {});
+    return { ok: false, error: err?.message || 'FFmpeg metadata write failed' };
+  }
+}
+
 ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
   const ext = path.extname(filePath).toLowerCase().slice(1);
 
@@ -321,7 +421,11 @@ ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
     }
   }
 
-  return { ok: false, error: `Tag writing not supported for .${ext} files yet` };
+  if (ext === 'cdg' || ext === 'kar') {
+    return { ok: false, error: `Tag writing not supported for .${ext} files` };
+  }
+
+  return writeMetadataWithFfmpeg(filePath, tags || {}, ext);
 });
 
 // ── IPC: App version and updates ────────────────────────────────────────────

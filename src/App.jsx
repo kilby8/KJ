@@ -7,7 +7,7 @@ import { shiftFieldsLeft, shiftFieldsRight, swapArtistTitle, formatSize } from '
 import { useToasts, useSelection } from './hooks/useSelectionAndToasts';
 
 const logo = `${import.meta.env.BASE_URL}ikfs-logo.png`;
-const WRITABLE_EXTS = new Set(['MP3', 'ZIP']);
+const WRITABLE_EXTS = new Set(['MP3', 'ZIP', 'WAV', 'MP4', 'MKV', 'OGG', 'FLAC', 'M4A', 'WMA']);
 
 // ── Sorting helper ──────────────────────────────────────────────────────────
 function sortFiles(files, key, dir) {
