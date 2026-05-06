@@ -7,6 +7,7 @@ import { shiftFieldsLeft, shiftFieldsRight, swapArtistTitle, formatSize } from '
 import { useToasts, useSelection } from './hooks/useSelectionAndToasts';
 
 const logo = `${import.meta.env.BASE_URL}ikfs-logo.png`;
+const WRITABLE_EXTS = new Set(['MP3', 'ZIP']);
 
 // ── Sorting helper ──────────────────────────────────────────────────────────
 function sortFiles(files, key, dir) {
@@ -214,10 +215,13 @@ export default function App() {
 
     const updated = selFiles.map(transform);
 
+    const writable = updated.filter(f => WRITABLE_EXTS.has((f.ext || '').toUpperCase()));
+    const skipped = updated.length - writable.length;
+
     // Write back to disk
     let saveOk = 0;
     let saveErr = 0;
-    for (const f of updated) {
+    for (const f of writable) {
       try {
         const res = await window.electronAPI.writeMetadata(f.filePath, {
           artist: f.artist, title: f.title, album: f.album,
@@ -234,40 +238,64 @@ export default function App() {
     const updatedMap = new Map(updated.map(f => [f.filePath, f]));
     setFiles(prev => prev.map(f => updatedMap.has(f.filePath) ? updatedMap.get(f.filePath) : f));
 
-    const msg = saveErr
-      ? `${label}: updated ${saveOk}, ${saveErr} could not be saved to disk`
-      : `${label}: updated ${saveOk} file${saveOk !== 1 ? 's' : ''}`;
-    addToast(msg, saveErr ? 'error' : 'success');
+    let msg;
+    if (saveErr) {
+      msg = `${label}: saved ${saveOk}, ${saveErr} failed${skipped ? `, ${skipped} preview-only format` : ''}`;
+    } else if (skipped) {
+      msg = `${label}: saved ${saveOk}, skipped ${skipped} preview-only format file${skipped !== 1 ? 's' : ''}`;
+    } else {
+      msg = `${label}: updated ${saveOk} file${saveOk !== 1 ? 's' : ''}`;
+    }
+    addToast(msg, saveErr ? 'error' : (skipped ? 'info' : 'success'));
   }, [getSelectedFiles, addToast]);
 
   // ── Bulk save after modal edit ────────────────────────────────────────────
   const handleSaveEdit = useCallback(async (targetFiles, patch) => {
     const updated = targetFiles.map(f => ({ ...f, ...patch }));
 
+    const writable = updated.filter(f => WRITABLE_EXTS.has((f.ext || '').toUpperCase()));
+    const skipped = updated.length - writable.length;
+
     let saveOk = 0;
     let saveErr = 0;
-    for (const f of updated) {
+    const errorDetails = [];
+
+    for (const f of writable) {
       try {
         const res = await window.electronAPI.writeMetadata(f.filePath, {
           artist: f.artist, title: f.title, album: f.album,
           discId: f.discId, year: f.year, track: f.track,
         });
-        if (res.ok) saveOk++;
-        else saveErr++;
-      } catch {
+        if (res.ok) {
+          saveOk++;
+        } else {
+          saveErr++;
+          if (res?.error) {
+            errorDetails.push(`${f.fileName || f.filePath}: ${res.error}`);
+          }
+        }
+      } catch (err) {
         saveErr++;
+        errorDetails.push(`${f.fileName || f.filePath}: ${err?.message || 'Unknown error'}`);
       }
     }
 
     const updatedMap = new Map(updated.map(f => [f.filePath, f]));
     setFiles(prev => prev.map(f => updatedMap.has(f.filePath) ? updatedMap.get(f.filePath) : f));
 
-    const msg = saveErr
-      ? `Saved ${saveOk} OK, ${saveErr} failed`
-      : `Saved ${saveOk} file${saveOk !== 1 ? 's' : ''}`;
-    addToast(msg, saveErr ? 'error' : 'success');
-  }, [addToast]);
+    let msg;
+    if (saveErr) {
+      const detail = errorDetails[0] ? ` — ${errorDetails[0]}` : '';
+      msg = `Saved ${saveOk} OK, ${saveErr} failed${skipped ? `, ${skipped} skipped` : ''}${detail}`;
+    } else if (skipped) {
+      msg = `Saved ${saveOk} OK, skipped ${skipped} preview-only format file${skipped !== 1 ? 's' : ''}`;
+    } else {
+      msg = `Saved ${saveOk} file${saveOk !== 1 ? 's' : ''}`;
+    }
 
+    addToast(msg, saveErr ? 'error' : (skipped ? 'info' : 'success'));
+  }, [addToast]);
+  
   // ── Context menu items ────────────────────────────────────────────────────
   const buildContextItems = useCallback(() => {
     const selFiles = getSelectedFiles();
