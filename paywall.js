@@ -22,9 +22,14 @@
   function resolveApiBase() {
     const current = new URL(window.location.href);
     const queryApi = current.searchParams.get('api');
-    if (queryApi) {
-      localStorage.setItem(apiStorageKey, queryApi);
-      return queryApi;
+    if (queryApi !== null) {
+      // ?api=https://... saves the override; ?api= (empty) clears it
+      if (queryApi) {
+        localStorage.setItem(apiStorageKey, queryApi);
+      } else {
+        localStorage.removeItem(apiStorageKey);
+      }
+      return queryApi || cfg.apiBaseUrl || '';
     }
     return localStorage.getItem(apiStorageKey) || cfg.apiBaseUrl || '';
   }

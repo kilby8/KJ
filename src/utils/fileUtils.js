@@ -50,9 +50,3 @@ export function formatSize(bytes) {
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-/**
- * Build a unique key for a file record.
- */
-export function fileKey(file) {
-  return file.filePath;
-}

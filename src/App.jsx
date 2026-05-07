@@ -121,30 +121,6 @@ export default function App() {
   const { selected, handleRowClick, selectAll, clearSelection, setSelected } =
     useSelection(displayFiles);
 
-  // ── Open folder ──────────────────────────────────────────────────────────
-  const handleOpenFolder = useCallback(async () => {
-    try {
-      if (!window.electronAPI) { addToast('Electron API not available (dev mode)', 'error'); return; }
-      const folders = await window.electronAPI.openFolder();
-      if (!folders.length) return;
-      await loadFromPaths(null, folders);
-    } catch (err) {
-      addToast(`Unable to open folder: ${err?.message || 'unknown error'}`, 'error');
-    }
-  }, []);
-
-  // ── Open files ───────────────────────────────────────────────────────────
-  const handleOpenFiles = useCallback(async () => {
-    try {
-      if (!window.electronAPI) { addToast('Electron API not available (dev mode)', 'error'); return; }
-      const filePaths = await window.electronAPI.openFiles();
-      if (!filePaths.length) return;
-      await loadFromPaths(filePaths, null);
-    } catch (err) {
-      addToast(`Unable to open files: ${err?.message || 'unknown error'}`, 'error');
-    }
-  }, []);
-
   // ── Core load routine ────────────────────────────────────────────────────
   const loadFromPaths = useCallback(async (filePaths, folderPaths) => {
     setLoading(true);
@@ -182,11 +158,38 @@ export default function App() {
     }
   }, [clearSelection, addToast]);
 
+  // ── Open folder ──────────────────────────────────────────────────────────
+  const handleOpenFolder = useCallback(async () => {
+    try {
+      if (!window.electronAPI) { addToast('Electron API not available (dev mode)', 'error'); return; }
+      const folders = await window.electronAPI.openFolder();
+      if (!folders.length) return;
+      await loadFromPaths(null, folders);
+    } catch (err) {
+      addToast(`Unable to open folder: ${err?.message || 'unknown error'}`, 'error');
+    }
+  }, [loadFromPaths, addToast]);
+
+  // ── Open files ───────────────────────────────────────────────────────────
+  const handleOpenFiles = useCallback(async () => {
+    try {
+      if (!window.electronAPI) { addToast('Electron API not available (dev mode)', 'error'); return; }
+      const filePaths = await window.electronAPI.openFiles();
+      if (!filePaths.length) return;
+      await loadFromPaths(filePaths, null);
+    } catch (err) {
+      addToast(`Unable to open files: ${err?.message || 'unknown error'}`, 'error');
+    }
+  }, [loadFromPaths, addToast]);
+
   // ── Sort ─────────────────────────────────────────────────────────────────
   const handleSort = useCallback((key) => {
     setSortKey(prev => {
-      if (prev === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-      else { setSortDir('asc'); }
+      if (prev === key) {
+        setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setSortDir('asc');
+      }
       return key;
     });
   }, []);

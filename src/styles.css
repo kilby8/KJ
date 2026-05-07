@@ -397,16 +397,6 @@ body {
   transition: width 0.2s;
 }
 
-/* ─── Column resize handle ─────────────────────────────────────────── */
-.resize-handle {
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 5px;
-  cursor: col-resize;
-}
-.resize-handle:hover { background: var(--accent2); opacity: 0.5; }
 
 /* ─── Scrollbar ────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
