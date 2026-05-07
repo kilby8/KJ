@@ -1,10 +1,9 @@
 require('dotenv').config();
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
-
+const { signToken, verifyToken } = require('./token');
 const {
   PORT = '8787',
   PAYPAL_CLIENT_ID,
