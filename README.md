@@ -118,7 +118,7 @@ Edit `paywall.config.js`:
 
 1. User enters username/password on the paywall page.
 2. Frontend calls `POST /api/auth/login`.
-3. Backend validates credentials from env vars (`LOGIN_USERNAME`, `LOGIN_PASSWORD`).
+3. Backend validates credentials from the SQLite auth store (`server/auth.sqlite`).
 4. Backend returns a short-lived signed token.
 5. Frontend enables download via `GET /api/download?token=...`.
 
@@ -152,15 +152,19 @@ A Render blueprint is included at `render.yaml` for the paywall API service.
 1. In Render, create a new Blueprint service from this repository.
 2. Confirm service name and region, then deploy.
 3. Set required secret env vars in Render dashboard:
-   - `LOGIN_USERNAME`
-   - `LOGIN_PASSWORD`
    - `TOKEN_SECRET`
    - `DOWNLOAD_URL` (recommended on Render free tier)
+   - optional: `AUTH_DB_PATH` (defaults to `server/auth.sqlite`)
    - optional: `DOWNLOAD_FILE_PATH` (for local-file serving)
 4. Verify API health endpoint:
    - `https://<your-render-service>.onrender.com/api/health`
 
 ### Login API Mode
+
+Default seeded login for this temporary mode:
+
+- username: `admin`
+- password: `admin123`
 
 Start backend locally:
 

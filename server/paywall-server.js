@@ -5,20 +5,18 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const { signToken, verifyToken } = require('./token');
+const { initAuthStore } = require('./auth-store');
 
 const {
   PORT = '8787',
   PAYWALL_ORIGIN,
-  LOGIN_USERNAME,
-  LOGIN_PASSWORD,
+  AUTH_DB_PATH,
   DOWNLOAD_FILE_PATH,
   DOWNLOAD_URL,
   TOKEN_SECRET,
   TOKEN_TTL_SECONDS = '900',
 } = process.env;
 
-if (!LOGIN_USERNAME) throw new Error('Missing LOGIN_USERNAME');
-if (!LOGIN_PASSWORD) throw new Error('Missing LOGIN_PASSWORD');
 if (!TOKEN_SECRET) throw new Error('Missing TOKEN_SECRET');
 
 const absoluteDownloadPath = DOWNLOAD_FILE_PATH ? path.resolve(DOWNLOAD_FILE_PATH) : null;
@@ -30,6 +28,7 @@ if (!absoluteDownloadPath && !DOWNLOAD_URL) {
 }
 
 const app = express();
+let authStore;
 
 app.use(express.json());
 app.use((req, res, next) => {
@@ -55,6 +54,10 @@ function createDownloadToken(subject) {
 }
 
 app.post('/api/auth/login', (req, res) => {
+  if (!authStore) {
+    return res.status(503).json({ ok: false, error: 'Auth store unavailable' });
+  }
+
   const username = (req.body?.username || '').trim();
   const password = req.body?.password || '';
 
@@ -62,9 +65,10 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(400).json({ ok: false, error: 'Missing username or password' });
   }
 
-  const usernameOk = safeEquals(username, LOGIN_USERNAME);
-  const passwordOk = safeEquals(password, LOGIN_PASSWORD);
-  if (!usernameOk || !passwordOk) {
+  const user = authStore.getUser(username);
+  const usernameOk = safeEquals(username, user?.username || '');
+  const passwordOk = safeEquals(password, user?.password || '');
+  if (!user || !usernameOk || !passwordOk) {
     return res.status(401).json({ ok: false, error: 'Invalid credentials' });
   }
 
@@ -92,10 +96,21 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     authMode: 'login',
+    authStore: authStore ? 'sqlite' : 'unavailable',
+    authDbPath: authStore?.dbPath || null,
     downloadMode: DOWNLOAD_URL ? 'redirect' : (absoluteDownloadPath ? 'file' : 'unconfigured'),
   });
 });
 
-app.listen(Number(PORT), () => {
-  console.log(`Paywall API listening on http://localhost:${PORT}`);
+async function start() {
+  authStore = await initAuthStore(AUTH_DB_PATH);
+  app.listen(Number(PORT), () => {
+    console.log(`Paywall API listening on http://localhost:${PORT}`);
+    console.log(`Auth DB ready at ${authStore.dbPath} (seeded admin/admin123)`);
+  });
+}
+
+start().catch((err) => {
+  console.error('Failed to start paywall server:', err?.message || err);
+  process.exit(1);
 });

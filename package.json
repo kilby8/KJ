@@ -75,6 +75,7 @@
     "music-metadata": "^11.12.3",
     "node-id3": "^0.2.9",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "sql.js": "^1.14.1"
   }
 }
