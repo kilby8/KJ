@@ -11,7 +11,8 @@
     "build:electron": "npm run build && electron-builder",
     "publish:electron": "npm run build && electron-builder --publish always",
     "paywall:server": "node server/paywall-server.js",
-    "test": "echo \"No tests configured yet\" && exit 0"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [
     "karaoke",

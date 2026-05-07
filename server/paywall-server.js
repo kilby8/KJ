@@ -282,7 +282,7 @@ app.get('/api/download/token', async (req, res) => {
 
 app.get('/api/download', (req, res) => {
   const token = req.query.token;
-  const parsed = verifyToken(token);
+  const parsed = verifyToken(token, TOKEN_SECRET);
   if (!parsed) return res.status(403).json({ ok: false, error: 'Invalid or expired token' });
 
   if (!absoluteDownloadPath || !fs.existsSync(absoluteDownloadPath)) {
