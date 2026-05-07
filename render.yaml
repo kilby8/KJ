@@ -33,6 +33,8 @@ services:
         sync: false
       - key: PAYPAL_WEBHOOK_ID
         sync: false
+      - key: DOWNLOAD_URL
+        sync: false
       - key: DOWNLOAD_FILE_PATH
         sync: false
       - key: TOKEN_SECRET

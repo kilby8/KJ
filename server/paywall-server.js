@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const { signToken, verifyToken } = require('./token');
+
 const {
   PORT = '8787',
   PAYPAL_CLIENT_ID,
@@ -17,18 +18,23 @@ const {
   PAYPAL_AMOUNT = '29.00',
   PAYPAL_CURRENCY = 'USD',
   DOWNLOAD_FILE_PATH,
+  DOWNLOAD_URL,          // redirect to external URL (e.g. GitHub Release asset)
   TOKEN_SECRET,
   TOKEN_TTL_SECONDS = '900',
 } = process.env;
 
+// PayPal creds and TOKEN_SECRET are required — server is useless without them
 if (!PAYPAL_CLIENT_ID) throw new Error('Missing PAYPAL_CLIENT_ID');
 if (!PAYPAL_CLIENT_SECRET) throw new Error('Missing PAYPAL_CLIENT_SECRET');
-if (!DOWNLOAD_FILE_PATH) throw new Error('Missing DOWNLOAD_FILE_PATH');
 if (!TOKEN_SECRET) throw new Error('Missing TOKEN_SECRET');
 
-const absoluteDownloadPath = path.resolve(DOWNLOAD_FILE_PATH);
-if (!fs.existsSync(absoluteDownloadPath)) {
-  console.warn(`Warning: DOWNLOAD_FILE_PATH does not exist at startup: ${absoluteDownloadPath}`);
+// DOWNLOAD_FILE_PATH / DOWNLOAD_URL are validated at request time, not startup
+const absoluteDownloadPath = DOWNLOAD_FILE_PATH ? path.resolve(DOWNLOAD_FILE_PATH) : null;
+if (absoluteDownloadPath && !fs.existsSync(absoluteDownloadPath)) {
+  console.warn(`Warning: DOWNLOAD_FILE_PATH does not exist: ${absoluteDownloadPath}`);
+}
+if (!absoluteDownloadPath && !DOWNLOAD_URL) {
+  console.warn('Warning: Neither DOWNLOAD_FILE_PATH nor DOWNLOAD_URL is set. /api/download will return 503.');
 }
 
 const paypalBase = PAYPAL_API_BASE || (PAYPAL_ENV === 'sandbox'
@@ -284,15 +290,26 @@ app.get('/api/download', (req, res) => {
   const parsed = verifyToken(token, TOKEN_SECRET);
   if (!parsed) return res.status(403).json({ ok: false, error: 'Invalid or expired token' });
 
-  if (!absoluteDownloadPath || !fs.existsSync(absoluteDownloadPath)) {
-    return res.status(503).json({ ok: false, error: 'Download file not configured on server' });
+  // Prefer redirect to external URL (e.g. GitHub Release asset)
+  if (DOWNLOAD_URL) {
+    return res.redirect(302, DOWNLOAD_URL);
   }
 
-  return res.download(absoluteDownloadPath, path.basename(absoluteDownloadPath));
+  // Fall back to serving a local file
+  if (absoluteDownloadPath && fs.existsSync(absoluteDownloadPath)) {
+    return res.download(absoluteDownloadPath, path.basename(absoluteDownloadPath));
+  }
+
+  return res.status(503).json({ ok: false, error: 'Download not configured on server. Set DOWNLOAD_URL or DOWNLOAD_FILE_PATH.' });
 });
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, provider: 'paypal', webhookConfigured: Boolean(PAYPAL_WEBHOOK_ID) });
+  res.json({
+    ok: true,
+    provider: 'paypal',
+    webhookConfigured: Boolean(PAYPAL_WEBHOOK_ID),
+    downloadMode: DOWNLOAD_URL ? 'redirect' : (absoluteDownloadPath ? 'file' : 'unconfigured'),
+  });
 });
 
 app.listen(Number(PORT), () => {
