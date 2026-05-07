@@ -55,42 +55,6 @@ app.use((req, res, next) => {
   next();
 });
 
-function b64url(input) {
-  return Buffer.from(input)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
-}
-
-function fromB64url(input) {
-  const b64 = input.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = b64.length % 4;
-  const fixed = pad ? `${b64}${'='.repeat(4 - pad)}` : b64;
-  return Buffer.from(fixed, 'base64').toString('utf8');
-}
-
-function signToken(payloadObj) {
-  const payload = b64url(JSON.stringify(payloadObj));
-  const sig = b64url(crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest());
-  return `${payload}.${sig}`;
-}
-
-function verifyToken(token) {
-  if (!token || !token.includes('.')) return null;
-  const [payload, sig] = token.split('.');
-  const expected = b64url(crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest());
-  const sigBuf = Buffer.from(sig);
-  const expectedBuf = Buffer.from(expected);
-
-  if (sigBuf.length !== expectedBuf.length) return null;
-  if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
-
-  const data = JSON.parse(fromB64url(payload));
-  if (!data?.exp || Date.now() > data.exp) return null;
-  return data;
-}
-
 function markOrderPaid(orderId, source) {
   if (!orderId) return;
   paidOrders.set(orderId, { source, at: Date.now() });
@@ -98,7 +62,7 @@ function markOrderPaid(orderId, source) {
 
 function createDownloadToken(orderId) {
   const exp = Date.now() + Number(TOKEN_TTL_SECONDS) * 1000;
-  const token = signToken({ oid: orderId, exp });
+  const token = signToken({ oid: orderId, exp }, TOKEN_SECRET);
   return { token, expiresAt: exp };
 }
 
