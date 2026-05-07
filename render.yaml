@@ -5,12 +5,16 @@ services:
     plan: starter
     autoDeploy: true
     rootDir: .
-    buildCommand: npm install
+    buildCommand: npm install --ignore-scripts
     startCommand: npm run paywall:server
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: "20"
+      - key: ELECTRON_SKIP_BINARY_DOWNLOAD
+        value: "1"
+      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+        value: "1"
       - key: PORT
         value: "10000"
       - key: PAYPAL_ENV
