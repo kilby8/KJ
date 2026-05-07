@@ -99,7 +99,7 @@ npm run publish:electron
 
 ## Web Paywall Page (Before Download)
 
-A standalone page is included to gate downloads behind payment:
+A standalone page is included to gate downloads behind login:
 
 - `paywall.html`
 - `paywall.css`
@@ -112,21 +112,15 @@ Edit `paywall.config.js`:
 
 - `priceLabel`: text shown on page
 - `apiBaseUrl`: backend API base URL (example: `http://localhost:8787`)
-- `amount`: checkout amount sent to backend order creation
-- `currency`: checkout currency code (example: `USD`)
 - `storageKey`: local browser key for unlocked state
 
 ### Flow
 
-1. User clicks **Buy Now (PayPal)**.
-2. Frontend calls `POST /api/paypal/order`.
-3. Backend creates PayPal order and returns `approvalUrl`.
-4. Browser redirects to PayPal for approval.
-5. User returns to paywall with `?token=<order_id>` or `?order_id=<order_id>`.
-6. Frontend verifies payment with `GET /api/download/token?order_id=...`.
-7. Frontend receives signed token and enables `GET /api/download?token=...`.
-
-> Note: This mode verifies payment server-side before unlocking download access.
+1. User enters username/password on the paywall page.
+2. Frontend calls `POST /api/auth/login`.
+3. Backend validates credentials from env vars (`LOGIN_USERNAME`, `LOGIN_PASSWORD`).
+4. Backend returns a short-lived signed token.
+5. Frontend enables download via `GET /api/download?token=...`.
 
 ### GitHub Pages Deployment
 
@@ -158,65 +152,24 @@ A Render blueprint is included at `render.yaml` for the paywall API service.
 1. In Render, create a new Blueprint service from this repository.
 2. Confirm service name and region, then deploy.
 3. Set required secret env vars in Render dashboard:
-   - `PAYPAL_CLIENT_ID`
-   - `PAYPAL_CLIENT_SECRET`
-   - `PAYPAL_WEBHOOK_ID`
-   - `DOWNLOAD_FILE_PATH`
+   - `LOGIN_USERNAME`
+   - `LOGIN_PASSWORD`
    - `TOKEN_SECRET`
+   - `DOWNLOAD_URL` (recommended on Render free tier)
+   - optional: `DOWNLOAD_FILE_PATH` (for local-file serving)
 4. Verify API health endpoint:
    - `https://<your-render-service>.onrender.com/api/health`
 
-#### PayPal webhook target
+### Login API Mode
 
-After Render deploy, configure PayPal webhook URL to:
-
-- `https://<your-render-service>.onrender.com/api/paypal/webhook`
-
-### PayPal API Secure Mode (Server-Verified)
-
-The paywall backend can verify PayPal payments before issuing a short-lived download token.
-
-#### 1) Install dependencies
-
-```bash
-npm install
-```
-
-#### 2) Configure environment
-
-Copy `.env.example` to `.env` and set values:
-
-- `PAYPAL_CLIENT_ID`
-- `PAYPAL_CLIENT_SECRET`
-- `DOWNLOAD_FILE_PATH`
-- `TOKEN_SECRET`
-- optional: `PAYPAL_ENV`, `PAYPAL_API_BASE`, `PAYWALL_SUCCESS_URL`, `PAYWALL_CANCEL_URL`, `PAYWALL_ORIGIN`, `PAYPAL_AMOUNT`, `PAYPAL_CURRENCY`, `PORT`, `TOKEN_TTL_SECONDS`
-
-#### 3) Start secure paywall API
+Start backend locally:
 
 ```bash
 npm run paywall:server
 ```
 
-#### 4) API flow
+Backend endpoints used by the paywall:
 
-1. Frontend calls `POST /api/paypal/order`.
-2. Backend creates PayPal order and returns approval URL.
-3. Buyer completes PayPal approval/capture flow.
-4. Frontend verifies with backend (`GET /api/download/token?order_id=...`).
-5. Frontend receives signed token and downloads via `GET /api/download?token=...`.
-
-### Webhook Setup (PayPal)
-
-Configure a webhook in the PayPal Developer Dashboard pointing to:
-
-- `https://<your-api-domain>/api/paypal/webhook`
-
-Subscribe to events:
-
-- `CHECKOUT.ORDER.COMPLETED`
-- `PAYMENT.CAPTURE.COMPLETED`
-
-Add to `.env`:
-
-- `PAYPAL_WEBHOOK_ID`
+- `POST /api/auth/login` → returns `{ ok, token, expiresAt }`
+- `GET /api/download?token=...` → redirects to `DOWNLOAD_URL` or serves `DOWNLOAD_FILE_PATH`
+- `GET /api/health` → returns service status and auth/download mode

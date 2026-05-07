@@ -3,17 +3,18 @@
 
   const els = {
     priceLabel: document.getElementById('priceLabel'),
-    buyNowBtn: document.getElementById('buyNowBtn'),
-    paidBtn: document.getElementById('paidBtn'),
+    loginForm: document.getElementById('loginForm'),
+    logoutBtn: document.getElementById('logoutBtn'),
+    username: document.getElementById('username'),
+    password: document.getElementById('password'),
     status: document.getElementById('status'),
     downloadSection: document.getElementById('downloadSection'),
     downloadBtn: document.getElementById('downloadBtn'),
   };
 
   const storageKey = cfg.storageKey || 'ikfs_download_unlocked';
+  const tokenStorageKey = `${storageKey}_token`;
   const apiStorageKey = `${storageKey}_api_base`;
-  const hasPayment = () => localStorage.getItem(storageKey) === '1';
-  const setPayment = () => localStorage.setItem(storageKey, '1');
 
   function setStatus(text) {
     els.status.textContent = text || '';
@@ -23,7 +24,6 @@
     const current = new URL(window.location.href);
     const queryApi = current.searchParams.get('api');
     if (queryApi !== null) {
-      // ?api=https://... saves the override; ?api= (empty) clears it
       if (queryApi) {
         localStorage.setItem(apiStorageKey, queryApi);
       } else {
@@ -38,6 +38,36 @@
     return resolveApiBase().replace(/\/+$/, '');
   }
 
+  function getStoredToken() {
+    return localStorage.getItem(tokenStorageKey) || '';
+  }
+
+  function setStoredToken(token) {
+    if (token) {
+      localStorage.setItem(storageKey, '1');
+      localStorage.setItem(tokenStorageKey, token);
+      return;
+    }
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem(tokenStorageKey);
+  }
+
+  function applyDownloadLink(token) {
+    els.downloadBtn.href = token
+      ? `${apiBase()}/api/download?token=${encodeURIComponent(token)}`
+      : '#';
+  }
+
+  function updateGate() {
+    const token = getStoredToken();
+    const unlocked = Boolean(token);
+    els.downloadSection.classList.toggle('hidden', !unlocked);
+    applyDownloadLink(token);
+    if (unlocked) {
+      setStatus('Signed in. Download unlocked for this browser session.');
+    }
+  }
+
   async function readJsonOrThrow(res, fallbackMessage) {
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
@@ -47,114 +77,71 @@
     return res.json();
   }
 
+  async function login(username, password) {
+    const endpoint = `${apiBase()}/api/auth/login`;
+    let res;
+
+    try {
+      res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+    } catch {
+      throw new Error(`Failed to reach API at ${endpoint}`);
+    }
+
+    const data = await readJsonOrThrow(res, 'Login failed');
+    if (!res.ok || !data?.ok || !data?.token) {
+      throw new Error(data?.error || `Login failed (${res.status})`);
+    }
+
+    return data.token;
+  }
+
   function applyConfig() {
     if (cfg.priceLabel) els.priceLabel.textContent = cfg.priceLabel;
-    els.downloadBtn.href = '#';
+    applyDownloadLink('');
 
     if (!apiBase()) {
       setStatus('Configure apiBaseUrl in paywall.config.js');
     }
   }
 
-  function updateGate() {
-    const unlocked = hasPayment();
-    els.downloadSection.classList.toggle('hidden', !unlocked);
-    if (unlocked) {
-      setStatus('Access unlocked for this browser.');
-    }
-  }
-
-  async function createPayPalOrder() {
-    const origin = `${window.location.origin}${window.location.pathname}`;
-    const endpoint = `${apiBase()}/api/paypal/order`;
-
-    let res;
-    try {
-      res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          origin,
-          amount: cfg.amount,
-          currency: cfg.currency,
-        }),
-      });
-    } catch {
-      throw new Error(`Failed to reach API at ${endpoint}`);
-    }
-
-    const data = await readJsonOrThrow(res, 'Unable to create PayPal order');
-    if (!res.ok || !data?.ok || !data?.approvalUrl) {
-      throw new Error(data?.error || `Unable to create PayPal order (${res.status})`);
-    }
-
-    return data.approvalUrl;
-  }
-
-  async function verifyAndUnlock(orderId) {
-    const url = new URL(`${apiBase()}/api/download/token`);
-    url.searchParams.set('order_id', orderId);
-
-    let res;
-    try {
-      res = await fetch(url.toString());
-    } catch {
-      throw new Error(`Failed to reach API at ${url.origin}`);
-    }
-
-    const data = await readJsonOrThrow(res, 'Payment verification failed');
-    if (!res.ok || !data?.ok || !data?.token) {
-      throw new Error(data?.error || `Payment verification failed (${res.status})`);
-    }
-
-    setPayment();
-    els.downloadBtn.href = `${apiBase()}/api/download?token=${encodeURIComponent(data.token)}`;
-    updateGate();
-    setStatus('Payment verified. Download unlocked.');
-  }
-
-  els.buyNowBtn.addEventListener('click', async () => {
+  els.loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
     if (!apiBase()) {
       setStatus('Missing apiBaseUrl in paywall.config.js');
       return;
     }
 
-    try {
-      setStatus('Opening PayPal checkout…');
-      const approvalUrl = await createPayPalOrder();
-      window.location.href = approvalUrl;
-    } catch (err) {
-      setStatus(err?.message || 'Failed to start PayPal checkout');
-    }
-  });
-
-  els.paidBtn.addEventListener('click', async () => {
-    const current = new URL(window.location.href);
-    const orderId = current.searchParams.get('token') || current.searchParams.get('order_id');
-    if (!orderId) {
-      setStatus('Missing order token in URL. Complete checkout first.');
+    const username = (els.username.value || '').trim();
+    const password = els.password.value || '';
+    if (!username || !password) {
+      setStatus('Enter username and password.');
       return;
     }
 
     try {
-      await verifyAndUnlock(orderId);
+      setStatus('Signing in...');
+      const token = await login(username, password);
+      setStoredToken(token);
+      els.password.value = '';
+      updateGate();
     } catch (err) {
-      setStatus(err?.message || 'Unable to verify payment');
+      setStatus(err?.message || 'Unable to sign in');
     }
   });
 
-  (async function init() {
-    applyConfig();
+  els.logoutBtn.addEventListener('click', () => {
+    setStoredToken('');
+    applyDownloadLink('');
+    setStatus('Logged out.');
+    updateGate();
+  });
 
-    const current = new URL(window.location.href);
-    const orderId = current.searchParams.get('token') || current.searchParams.get('order_id');
-    if (orderId) {
-      try {
-        await verifyAndUnlock(orderId);
-      } catch {
-        // allow manual retry via button
-      }
-    }
+  (function init() {
+    applyConfig();
 
     updateGate();
   })();

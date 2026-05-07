@@ -17,25 +17,13 @@ services:
         value: "1"
       - key: PORT
         value: "10000"
-      - key: PAYPAL_ENV
-        value: live
-      - key: PAYPAL_AMOUNT
-        value: "29.00"
-      - key: PAYPAL_CURRENCY
-        value: USD
       - key: TOKEN_TTL_SECONDS
         value: "900"
-      - key: PAYWALL_SUCCESS_URL
-        value: https://kilby8.github.io/KJ/
-      - key: PAYWALL_CANCEL_URL
-        value: https://kilby8.github.io/KJ/?canceled=1
       - key: PAYWALL_ORIGIN
         value: https://kilby8.github.io
-      - key: PAYPAL_CLIENT_ID
+      - key: LOGIN_USERNAME
         sync: false
-      - key: PAYPAL_CLIENT_SECRET
-        sync: false
-      - key: PAYPAL_WEBHOOK_ID
+      - key: LOGIN_PASSWORD
         sync: false
       - key: DOWNLOAD_URL
         sync: false

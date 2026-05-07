@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
@@ -7,28 +8,19 @@ const { signToken, verifyToken } = require('./token');
 
 const {
   PORT = '8787',
-  PAYPAL_CLIENT_ID,
-  PAYPAL_CLIENT_SECRET,
-  PAYPAL_ENV = 'live',
-  PAYPAL_API_BASE,
-  PAYPAL_WEBHOOK_ID,
-  PAYWALL_SUCCESS_URL,
-  PAYWALL_CANCEL_URL,
   PAYWALL_ORIGIN,
-  PAYPAL_AMOUNT = '29.00',
-  PAYPAL_CURRENCY = 'USD',
+  LOGIN_USERNAME,
+  LOGIN_PASSWORD,
   DOWNLOAD_FILE_PATH,
-  DOWNLOAD_URL,          // redirect to external URL (e.g. GitHub Release asset)
+  DOWNLOAD_URL,
   TOKEN_SECRET,
   TOKEN_TTL_SECONDS = '900',
 } = process.env;
 
-// PayPal creds and TOKEN_SECRET are required — server is useless without them
-if (!PAYPAL_CLIENT_ID) throw new Error('Missing PAYPAL_CLIENT_ID');
-if (!PAYPAL_CLIENT_SECRET) throw new Error('Missing PAYPAL_CLIENT_SECRET');
+if (!LOGIN_USERNAME) throw new Error('Missing LOGIN_USERNAME');
+if (!LOGIN_PASSWORD) throw new Error('Missing LOGIN_PASSWORD');
 if (!TOKEN_SECRET) throw new Error('Missing TOKEN_SECRET');
 
-// DOWNLOAD_FILE_PATH / DOWNLOAD_URL are validated at request time, not startup
 const absoluteDownloadPath = DOWNLOAD_FILE_PATH ? path.resolve(DOWNLOAD_FILE_PATH) : null;
 if (absoluteDownloadPath && !fs.existsSync(absoluteDownloadPath)) {
   console.warn(`Warning: DOWNLOAD_FILE_PATH does not exist: ${absoluteDownloadPath}`);
@@ -36,12 +28,6 @@ if (absoluteDownloadPath && !fs.existsSync(absoluteDownloadPath)) {
 if (!absoluteDownloadPath && !DOWNLOAD_URL) {
   console.warn('Warning: Neither DOWNLOAD_FILE_PATH nor DOWNLOAD_URL is set. /api/download will return 503.');
 }
-
-const paypalBase = PAYPAL_API_BASE || (PAYPAL_ENV === 'sandbox'
-  ? 'https://api-m.sandbox.paypal.com'
-  : 'https://api-m.paypal.com');
-
-const paidOrders = new Map();
 
 const app = express();
 
@@ -55,198 +41,35 @@ app.use((req, res, next) => {
   next();
 });
 
-function markOrderPaid(orderId, source) {
-  if (!orderId) return;
-  paidOrders.set(orderId, { source, at: Date.now() });
+function safeEquals(a, b) {
+  const aBuf = Buffer.from(String(a || ''), 'utf8');
+  const bBuf = Buffer.from(String(b || ''), 'utf8');
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
 }
 
-function createDownloadToken(orderId) {
+function createDownloadToken(subject) {
   const exp = Date.now() + Number(TOKEN_TTL_SECONDS) * 1000;
-  const token = signToken({ oid: orderId, exp }, TOKEN_SECRET);
+  const token = signToken({ sub: subject, exp }, TOKEN_SECRET);
   return { token, expiresAt: exp };
 }
 
-async function getPayPalAccessToken() {
-  const basic = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
-  const res = await fetch(`${paypalBase}/v1/oauth2/token`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${basic}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: 'grant_type=client_credentials',
-  });
+app.post('/api/auth/login', (req, res) => {
+  const username = (req.body?.username || '').trim();
+  const password = req.body?.password || '';
 
-  const data = await res.json();
-  if (!res.ok || !data?.access_token) {
-    throw new Error(data?.error_description || 'Failed to get PayPal access token');
+  if (!username || !password) {
+    return res.status(400).json({ ok: false, error: 'Missing username or password' });
   }
 
-  return data.access_token;
-}
-
-async function getPayPalOrder(orderId, accessToken) {
-  const res = await fetch(`${paypalBase}/v2/checkout/orders/${orderId}`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  const data = await res.json();
-  if (!res.ok || !data?.id) {
-    throw new Error(data?.message || 'Unable to fetch PayPal order');
+  const usernameOk = safeEquals(username, LOGIN_USERNAME);
+  const passwordOk = safeEquals(password, LOGIN_PASSWORD);
+  if (!usernameOk || !passwordOk) {
+    return res.status(401).json({ ok: false, error: 'Invalid credentials' });
   }
 
-  return data;
-}
-
-async function capturePayPalOrder(orderId, accessToken) {
-  const res = await fetch(`${paypalBase}/v2/checkout/orders/${orderId}/capture`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  const data = await res.json();
-  if (!res.ok || data?.status !== 'COMPLETED') {
-    throw new Error(data?.message || 'PayPal capture was not completed');
-  }
-
-  return data;
-}
-
-function resolveSuccessUrl(origin) {
-  if (PAYWALL_SUCCESS_URL) return PAYWALL_SUCCESS_URL;
-  if (!origin) throw new Error('Missing success URL context; set PAYWALL_SUCCESS_URL');
-  return `${origin}?paid=1`;
-}
-
-function resolveCancelUrl(origin) {
-  if (PAYWALL_CANCEL_URL) return PAYWALL_CANCEL_URL;
-  if (!origin) throw new Error('Missing cancel URL context; set PAYWALL_CANCEL_URL');
-  return `${origin}?canceled=1`;
-}
-
-app.post('/api/paypal/order', async (req, res) => {
-  try {
-    const origin = req.body?.origin;
-    const amount = req.body?.amount || PAYPAL_AMOUNT;
-    const currency = req.body?.currency || PAYPAL_CURRENCY;
-
-    const accessToken = await getPayPalAccessToken();
-    const createRes = await fetch(`${paypalBase}/v2/checkout/orders`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        intent: 'CAPTURE',
-        purchase_units: [{
-          amount: { currency_code: currency, value: amount },
-          description: 'IKFS download access',
-        }],
-        application_context: {
-          return_url: resolveSuccessUrl(origin),
-          cancel_url: resolveCancelUrl(origin),
-          user_action: 'PAY_NOW',
-        },
-      }),
-    });
-
-    const order = await createRes.json();
-    if (!createRes.ok || !order?.id) {
-      return res.status(400).json({ ok: false, error: order?.message || 'Failed to create PayPal order' });
-    }
-
-    const approvalUrl = (order.links || []).find((l) => l.rel === 'approve')?.href;
-    return res.json({ ok: true, orderId: order.id, approvalUrl });
-  } catch (err) {
-    return res.status(400).json({ ok: false, error: err.message || 'Unable to create PayPal order' });
-  }
-});
-
-app.post('/api/paypal/webhook', async (req, res) => {
-  if (!PAYPAL_WEBHOOK_ID) {
-    return res.status(500).json({ ok: false, error: 'Missing PAYPAL_WEBHOOK_ID' });
-  }
-
-  try {
-    const accessToken = await getPayPalAccessToken();
-    const verifyRes = await fetch(`${paypalBase}/v1/notifications/verify-webhook-signature`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        auth_algo: req.get('paypal-auth-algo'),
-        cert_url: req.get('paypal-cert-url'),
-        transmission_id: req.get('paypal-transmission-id'),
-        transmission_sig: req.get('paypal-transmission-sig'),
-        transmission_time: req.get('paypal-transmission-time'),
-        webhook_id: PAYPAL_WEBHOOK_ID,
-        webhook_event: req.body,
-      }),
-    });
-
-    const verify = await verifyRes.json();
-    if (!verifyRes.ok || verify?.verification_status !== 'SUCCESS') {
-      return res.status(400).json({ ok: false, error: 'Invalid PayPal webhook signature' });
-    }
-
-    const eventType = req.body?.event_type;
-    const resource = req.body?.resource || {};
-
-    if (eventType === 'CHECKOUT.ORDER.COMPLETED') {
-      markOrderPaid(resource.id, 'webhook:order-completed');
-    }
-
-    if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
-      const orderId = resource?.supplementary_data?.related_ids?.order_id;
-      markOrderPaid(orderId, 'webhook:capture-completed');
-    }
-
-    return res.json({ ok: true, received: true });
-  } catch (err) {
-    return res.status(400).json({ ok: false, error: err.message || 'Failed webhook processing' });
-  }
-});
-
-app.get('/api/download/token', async (req, res) => {
-  const orderId = req.query.order_id || req.query.token;
-  if (!orderId) return res.status(400).json({ ok: false, error: 'Missing order_id' });
-
-  try {
-    if (paidOrders.has(orderId)) {
-      const { token, expiresAt } = createDownloadToken(orderId);
-      return res.json({ ok: true, token, expiresAt, source: 'webhook-cache' });
-    }
-
-    const accessToken = await getPayPalAccessToken();
-    const order = await getPayPalOrder(orderId, accessToken);
-
-    if (order.status === 'COMPLETED') {
-      markOrderPaid(orderId, 'order-status-completed');
-      const { token, expiresAt } = createDownloadToken(orderId);
-      return res.json({ ok: true, token, expiresAt, source: 'order-status' });
-    }
-
-    if (order.status === 'APPROVED') {
-      await capturePayPalOrder(orderId, accessToken);
-      markOrderPaid(orderId, 'captured-on-verify');
-      const { token, expiresAt } = createDownloadToken(orderId);
-      return res.json({ ok: true, token, expiresAt, source: 'capture' });
-    }
-
-    return res.status(403).json({ ok: false, error: 'Payment not completed' });
-  } catch (err) {
-    return res.status(400).json({ ok: false, error: err.message || 'Unable to verify PayPal payment' });
-  }
+  const { token, expiresAt } = createDownloadToken(username);
+  return res.json({ ok: true, token, expiresAt });
 });
 
 app.get('/api/download', (req, res) => {
@@ -254,12 +77,10 @@ app.get('/api/download', (req, res) => {
   const parsed = verifyToken(token, TOKEN_SECRET);
   if (!parsed) return res.status(403).json({ ok: false, error: 'Invalid or expired token' });
 
-  // Prefer redirect to external URL (e.g. GitHub Release asset)
   if (DOWNLOAD_URL) {
     return res.redirect(302, DOWNLOAD_URL);
   }
 
-  // Fall back to serving a local file
   if (absoluteDownloadPath && fs.existsSync(absoluteDownloadPath)) {
     return res.download(absoluteDownloadPath, path.basename(absoluteDownloadPath));
   }
@@ -270,8 +91,7 @@ app.get('/api/download', (req, res) => {
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
-    provider: 'paypal',
-    webhookConfigured: Boolean(PAYPAL_WEBHOOK_ID),
+    authMode: 'login',
     downloadMode: DOWNLOAD_URL ? 'redirect' : (absoluteDownloadPath ? 'file' : 'unconfigured'),
   });
 });
