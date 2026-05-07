@@ -7,7 +7,10 @@ const DEFAULT_ADMIN_PASSWORD = 'admin123';
 
 async function initAuthStore(dbFilePath) {
   const SQL = await initSqlJs();
-  const resolvedPath = dbFilePath || path.join(process.cwd(), 'server', 'auth.sqlite');
+  const defaultPath = process.env.RENDER
+    ? '/tmp/auth.sqlite'
+    : path.join(process.cwd(), 'server', 'auth.sqlite');
+  const resolvedPath = dbFilePath || defaultPath;
 
   let db;
   if (fs.existsSync(resolvedPath)) {
@@ -57,10 +60,18 @@ async function initAuthStore(dbFilePath) {
     }
   }
 
-  persist();
+  let persistenceMode = 'file';
+  try {
+    persist();
+  } catch (err) {
+    // Keep service online even if the target path is not writable in the runtime container.
+    persistenceMode = 'memory';
+    console.warn(`Warning: failed to persist auth DB at ${resolvedPath}: ${err?.message || err}`);
+  }
 
   return {
     dbPath: resolvedPath,
+    persistenceMode,
     getUser,
   };
 }

@@ -17,7 +17,9 @@ const {
   TOKEN_TTL_SECONDS = '900',
 } = process.env;
 
-if (!TOKEN_SECRET) throw new Error('Missing TOKEN_SECRET');
+if (!TOKEN_SECRET) {
+  console.warn('Warning: Missing TOKEN_SECRET. Auth and download endpoints will return 503 until set.');
+}
 
 const absoluteDownloadPath = DOWNLOAD_FILE_PATH ? path.resolve(DOWNLOAD_FILE_PATH) : null;
 if (absoluteDownloadPath && !fs.existsSync(absoluteDownloadPath)) {
@@ -48,12 +50,18 @@ function safeEquals(a, b) {
 }
 
 function createDownloadToken(subject) {
+  if (!TOKEN_SECRET) {
+    throw new Error('Server not configured: missing TOKEN_SECRET');
+  }
   const exp = Date.now() + Number(TOKEN_TTL_SECONDS) * 1000;
   const token = signToken({ sub: subject, exp }, TOKEN_SECRET);
   return { token, expiresAt: exp };
 }
 
 app.post('/api/auth/login', (req, res) => {
+  if (!TOKEN_SECRET) {
+    return res.status(503).json({ ok: false, error: 'Server not configured: missing TOKEN_SECRET' });
+  }
   if (!authStore) {
     return res.status(503).json({ ok: false, error: 'Auth store unavailable' });
   }
@@ -77,6 +85,9 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.get('/api/download', (req, res) => {
+  if (!TOKEN_SECRET) {
+    return res.status(503).json({ ok: false, error: 'Server not configured: missing TOKEN_SECRET' });
+  }
   const token = req.query.token;
   const parsed = verifyToken(token, TOKEN_SECRET);
   if (!parsed) return res.status(403).json({ ok: false, error: 'Invalid or expired token' });
@@ -93,12 +104,17 @@ app.get('/api/download', (req, res) => {
 });
 
 app.get('/api/health', (_req, res) => {
+  const missing = [];
+  if (!TOKEN_SECRET) missing.push('TOKEN_SECRET');
+  if (!DOWNLOAD_URL && !absoluteDownloadPath) missing.push('DOWNLOAD_URL|DOWNLOAD_FILE_PATH');
   res.json({
-    ok: true,
+    ok: missing.length === 0,
     authMode: 'login',
     authStore: authStore ? 'sqlite' : 'unavailable',
     authDbPath: authStore?.dbPath || null,
+    authDbPersistence: authStore?.persistenceMode || null,
     downloadMode: DOWNLOAD_URL ? 'redirect' : (absoluteDownloadPath ? 'file' : 'unconfigured'),
+    missingConfig: missing,
   });
 });
 

@@ -22,7 +22,7 @@ services:
       - key: PAYWALL_ORIGIN
         value: https://kilby8.github.io
       - key: AUTH_DB_PATH
-        value: /opt/render/project/src/server/auth.sqlite
+        value: /tmp/auth.sqlite
       - key: DOWNLOAD_URL
         sync: false
       - key: DOWNLOAD_FILE_PATH
