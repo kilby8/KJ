@@ -22,7 +22,7 @@ services:
       - key: TOKEN_TTL_SECONDS
         value: "900"
       - key: PAYWALL_SUCCESS_URL
-        value: https://kilby8.github.io/KJ/?token={ORDER_ID}
+        value: https://kilby8.github.io/KJ/
       - key: PAYWALL_CANCEL_URL
         value: https://kilby8.github.io/KJ/?canceled=1
       - key: PAYWALL_ORIGIN

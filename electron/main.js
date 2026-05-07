@@ -63,7 +63,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
     backgroundColor: '#1a1a2e',
   });
@@ -200,7 +200,7 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
 
   for (const fp of filePaths) {
     const ext = path.extname(fp).toLowerCase().slice(1);
-    const stat = fs.statSync(fp);
+    const stat = await fs.promises.stat(fp);
 
     let artist = '';
     let title = '';
@@ -215,9 +215,12 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
         artist = meta.common.artist || '';
         title = meta.common.title || '';
         album = meta.common.album || '';
-        discId = Array.isArray(meta.common.comment)
-          ? (meta.common.comment[0] || '')
-          : (meta.common.comment || '');
+        const rawComment = Array.isArray(meta.common.comment)
+          ? meta.common.comment[0]
+          : meta.common.comment;
+        discId = (typeof rawComment === 'object' && rawComment !== null)
+          ? (rawComment.text || '')
+          : (rawComment || '');
         year = meta.common.year ? String(meta.common.year) : '';
         track = meta.common.track && meta.common.track.no ? String(meta.common.track.no) : '';
       } catch {
@@ -230,16 +233,19 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
         const mp3Entry = zip.getEntries().find(e => e.entryName.toLowerCase().endsWith('.mp3'));
         if (mp3Entry) {
           const buf = mp3Entry.getData();
-          const tmpMp3 = path.join(app.getPath('temp'), '__ikfs_tmp__.mp3');
+          const tmpMp3 = path.join(app.getPath('temp'), `__ikfs_tmp_${Date.now()}__.mp3`);
           fs.writeFileSync(tmpMp3, buf);
           try {
             const meta = await parseFile(tmpMp3, { duration: false, skipCovers: true });
             artist = meta.common.artist || '';
             title = meta.common.title || '';
             album = meta.common.album || '';
-            discId = Array.isArray(meta.common.comment)
-              ? (meta.common.comment[0] || '')
-              : (meta.common.comment || '');
+            const rawComment = Array.isArray(meta.common.comment)
+              ? meta.common.comment[0]
+              : meta.common.comment;
+            discId = (typeof rawComment === 'object' && rawComment !== null)
+              ? (rawComment.text || '')
+              : (rawComment || '');
             year = meta.common.year ? String(meta.common.year) : '';
             track = meta.common.track && meta.common.track.no ? String(meta.common.track.no) : '';
           } catch { /* empty */ }
@@ -250,8 +256,13 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
 
     const baseName = path.basename(fp, path.extname(fp));
 
-    if (!discId) {
-      discId = extractDiscIdFromText(baseName).discId;
+    // Always prefer a catalog disc ID extracted from the filename (e.g. KTYD486-08).
+    // Comment tags rarely contain structured disc IDs; if the filename has one, use it.
+    const fileDiscId = extractDiscIdFromText(baseName).discId;
+    if (fileDiscId) {
+      discId = fileDiscId;
+    } else if (!discId) {
+      discId = '';
     }
 
     if (ext === 'cdg' || ext === 'kar' || (!artist && !title && !discId)) {
@@ -392,6 +403,10 @@ ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
   }
 
   if (ext === 'zip') {
+    const tmpZip = path.join(
+      path.dirname(filePath),
+      `${path.basename(filePath, path.extname(filePath))}.ikfs-tmp-${Date.now()}.zip`,
+    );
     try {
       const AdmZip = require('adm-zip');
       const NodeID3 = require('node-id3');
@@ -414,9 +429,12 @@ ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
       }
       const newBuf = NodeID3.write(merged, buf);
       zip.updateFile(mp3Entry.entryName, newBuf);
-      zip.writeZip(filePath);
+      // Write to a temp file first, then atomically replace the original
+      zip.writeZip(tmpZip);
+      await replaceFileAtomic(tmpZip, filePath);
       return { ok: true };
     } catch (err) {
+      await fs.promises.unlink(tmpZip).catch(() => {});
       return { ok: false, error: err.message };
     }
   }
