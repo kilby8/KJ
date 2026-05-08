@@ -17,6 +17,8 @@ if (!ffmpegBinaryPath) {
 
 const METADATA_CACHE_VERSION = 1;
 const METADATA_CACHE_MAX_ENTRIES = 200000;
+const TMP_MP3_PREFIX = '__ikfs_tmp_';
+const STALE_TMP_AGE_MS = 24 * 60 * 60 * 1000;
 let metadataCache = new Map();
 let metadataCacheLoaded = false;
 let metadataCacheDirty = false;
@@ -115,6 +117,55 @@ function invalidateCachedMetadata(filePath) {
   scheduleMetadataCacheFlush();
 }
 
+async function cleanupStaleSystemTempMp3() {
+  const tempDir = app.getPath('temp');
+  let entries;
+  try {
+    entries = await fs.promises.readdir(tempDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  const now = Date.now();
+  const staleCandidates = entries
+    .filter((e) => e.isFile() && e.name.startsWith(TMP_MP3_PREFIX) && e.name.toLowerCase().endsWith('.mp3'))
+    .map((e) => path.join(tempDir, e.name));
+
+  for (const fp of staleCandidates) {
+    try {
+      const stat = await fs.promises.stat(fp);
+      if ((now - stat.mtimeMs) < STALE_TMP_AGE_MS) continue;
+      await fs.promises.unlink(fp);
+    } catch {
+      // Ignore files in use or race conditions.
+    }
+  }
+}
+
+async function cleanupStaleWriteTempsInDir(dirPath) {
+  let entries;
+  try {
+    entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  const now = Date.now();
+  const staleCandidates = entries
+    .filter((e) => e.isFile() && e.name.includes('.ikfs-tmp-'))
+    .map((e) => path.join(dirPath, e.name));
+
+  for (const fp of staleCandidates) {
+    try {
+      const stat = await fs.promises.stat(fp);
+      if ((now - stat.mtimeMs) < STALE_TMP_AGE_MS) continue;
+      await fs.promises.unlink(fp);
+    } catch {
+      // Ignore files in use or race conditions.
+    }
+  }
+}
+
 function sendUpdateStatus(status, data = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('update:status', { status, ...data });
@@ -179,6 +230,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  cleanupStaleSystemTempMp3().catch(() => {});
   createWindow();
 
   if (!isDev) {
@@ -470,7 +522,7 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
         const mp3Entry = zip.getEntries().find(e => e.entryName.toLowerCase().endsWith('.mp3'));
         if (mp3Entry) {
           const buf = mp3Entry.getData();
-          const tmpMp3 = path.join(app.getPath('temp'), `__ikfs_tmp_${Date.now()}__.mp3`);
+          const tmpMp3 = path.join(app.getPath('temp'), `${TMP_MP3_PREFIX}${Date.now()}__.mp3`);
           fs.writeFileSync(tmpMp3, buf);
           try {
             const meta = await parseFile(tmpMp3, { duration: false, skipCovers: true });
@@ -599,6 +651,7 @@ async function writeMetadataWithFfmpeg(filePath, tags, ext) {
   }
 
   const dir = path.dirname(filePath);
+  await cleanupStaleWriteTempsInDir(dir);
   try {
     await fs.promises.access(dir, fs.constants.W_OK);
   } catch {
@@ -654,6 +707,7 @@ ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
       `${path.basename(filePath, path.extname(filePath))}.ikfs-tmp-${Date.now()}.zip`,
     );
     try {
+      await cleanupStaleWriteTempsInDir(path.dirname(filePath));
       const AdmZip = require('adm-zip');
       const NodeID3 = require('node-id3');
       const zip = new AdmZip(filePath);
