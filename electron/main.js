@@ -297,7 +297,7 @@ ipcMain.handle('dialog:openFiles', async () => {
 
 // ── IPC: Scan a list of folders for files ───────────────────────────────────
 const SCAN_SUPPORTED_EXTS = new Set(['mp3', 'wav', 'mp4', 'mkv', 'cdg', 'zip', 'kar', 'ogg', 'flac', 'm4a', 'wma']);
-const SCAN_MAX_FILES = 50000;
+const SCAN_MAX_FILES = 5000;
 
 function scanFoldersDetailed(folderPaths) {
   const stack = [...folderPaths];

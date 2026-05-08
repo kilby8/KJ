@@ -8,7 +8,7 @@ import { useToasts, useSelection } from './hooks/useSelectionAndToasts';
 
 const logo = `${import.meta.env.BASE_URL}ikfs-logo.png`;
 const WRITABLE_EXTS = new Set(['MP3', 'ZIP', 'WAV', 'MP4', 'MKV', 'OGG', 'FLAC', 'M4A', 'WMA']);
-const MAX_UI_FILES = 20000;
+const MAX_UI_FILES = 5000;
 
 // ── Sorting helper ──────────────────────────────────────────────────────────
 function sortFiles(files, key, dir) {
