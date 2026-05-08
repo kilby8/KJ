@@ -36,6 +36,9 @@ export default function App() {
   const [updateStatus, setUpdateStatus] = useState('');
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [cacheStats, setCacheStats] = useState({ hits: 0, misses: 0, entries: 0 });
+  const [parseSnapshot, setParseSnapshot] = useState(null); // for undo after bulk parse
+  const [bulkParsing, setBulkParsing] = useState(false);
+  const [bulkParseProgress, setBulkParseProgress] = useState({ current: 0, total: 0 });
 
   const { toasts, addToast, removeToast } = useToasts();
 
@@ -389,6 +392,95 @@ export default function App() {
     }
   }, [addToast, handleReparse]);
 
+  // ── Bulk internet parse for all selected files ────────────────────────────
+  const BULK_PARSE_MAX = 200;
+  const BULK_PARSE_DELAY_MS = 1200; // respect MusicBrainz 1 req/sec rate limit
+
+  const handleUndoParse = useCallback(() => {
+    if (!parseSnapshot) return;
+    setFiles(parseSnapshot);
+    setParseSnapshot(null);
+    addToast('Parse undone — files restored to previous state', 'info');
+  }, [parseSnapshot, addToast]);
+
+  const handleBulkOnlineParse = useCallback(async () => {
+    const selFiles = getSelectedFiles();
+    if (!selFiles.length) { addToast('No files selected', 'info'); return; }
+    if (!window.electronAPI?.lookupMetadataOnline) {
+      addToast('Online lookup is not available in this build', 'info'); return;
+    }
+
+    const toProcess = selFiles.slice(0, BULK_PARSE_MAX);
+    if (selFiles.length > BULK_PARSE_MAX) {
+      addToast(`Capped at ${BULK_PARSE_MAX} files — ${selFiles.length - BULK_PARSE_MAX} skipped`, 'info');
+    }
+
+    if (toProcess.length > 50) {
+      const estSecs = Math.ceil(toProcess.length * (BULK_PARSE_DELAY_MS / 1000));
+      const estMin = Math.ceil(estSecs / 60);
+      const ok = window.confirm(
+        `Parse ${toProcess.length} files using internet metadata?\n\nEstimated time: ~${estMin} min due to API rate limits.\n\nYou can Undo afterwards if results are wrong.`
+      );
+      if (!ok) return;
+    }
+
+    // Save snapshot for undo (replace any previous snapshot)
+    setParseSnapshot([...files]);
+    setBulkParsing(true);
+    setBulkParseProgress({ current: 0, total: toProcess.length });
+
+    let fromOnline = 0;
+    let fromFilename = 0;
+    let failed = 0;
+
+    for (let i = 0; i < toProcess.length; i++) {
+      const file = toProcess[i];
+      setBulkParseProgress({ current: i + 1, total: toProcess.length });
+
+      try {
+        const result = await window.electronAPI.lookupMetadataOnline({
+          artist: file.artist, title: file.title, album: file.album,
+          discId: file.discId, year: file.year, track: file.track,
+          fileName: file.fileName,
+        });
+
+        if (result?.ok && result.metadata) {
+          const fresh = {
+            ...file,
+            artist: result.metadata.artist || file.artist || '',
+            title:  result.metadata.title  || file.title  || '',
+            album:  result.metadata.album  || file.album  || '',
+            discId: result.metadata.discId || file.discId || '',
+            year:   result.metadata.year   || file.year   || '',
+            track:  result.metadata.track  || file.track  || '',
+          };
+          setFiles(prev => prev.map(f => f.filePath === fresh.filePath ? fresh : f));
+          if (result.source === 'filename') fromFilename++;
+          else fromOnline++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+
+      // Rate-limit delay between requests (skip after last file)
+      if (i < toProcess.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, BULK_PARSE_DELAY_MS));
+      }
+    }
+
+    setBulkParsing(false);
+    setBulkParseProgress({ current: 0, total: 0 });
+    await refreshCacheStats();
+
+    addToast(
+      `Bulk parse done — ${fromOnline} from internet · ${fromFilename} from filename · ${failed} unchanged`,
+      'success',
+      7000,
+    );
+  }, [files, getSelectedFiles, addToast, refreshCacheStats]);
+
   // ── Bulk save after modal edit ────────────────────────────────────────────
   const handleSaveEdit = useCallback(async (targetFiles, patch) => {
     const updated = targetFiles.map(f => ({ ...f, ...patch }));
@@ -557,6 +649,16 @@ export default function App() {
         >
           ✏️ Edit Tags
         </button>
+        <button
+          className="btn"
+          disabled={!selected.size || loading || bulkParsing}
+          onClick={handleBulkOnlineParse}
+          title="Search internet metadata for all selected files and apply best match"
+        >
+          {bulkParsing
+            ? `🌐 Parsing ${bulkParseProgress.current}/${bulkParseProgress.total}…`
+            : '🌐 Parse Selected (Internet)'}
+        </button>
 
         <div className="toolbar-spacer" />
 
@@ -576,6 +678,16 @@ export default function App() {
             <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>Loading… {loadProgress}%</span>
             <div className="progress-bar-wrap">
               <div className="progress-bar-fill" style={{ width: `${loadProgress}%` }} />
+            </div>
+          </div>
+        )}
+        {bulkParsing && (
+          <div style={{ padding: '8px 12px', background: 'var(--header-bg)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+              🌐 Internet parse {bulkParseProgress.current}/{bulkParseProgress.total}…
+            </span>
+            <div className="progress-bar-wrap">
+              <div className="progress-bar-fill" style={{ width: `${bulkParseProgress.total ? Math.round((bulkParseProgress.current / bulkParseProgress.total) * 100) : 0}%` }} />
             </div>
           </div>
         )}
@@ -668,6 +780,16 @@ export default function App() {
             title="Clear local updater cache"
           >
             Reset Update Cache
+          </button>
+        )}
+        {parseSnapshot && (
+          <button
+            className="btn"
+            style={{ marginLeft: 6, padding: '2px 8px', fontSize: 11, borderColor: 'var(--warning)', color: 'var(--warning)' }}
+            onClick={handleUndoParse}
+            title="Undo the last bulk internet parse — restores all files to their previous state"
+          >
+            ↩ Undo Parse
           </button>
         )}
         <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--text-dim)' }}>Created by Kilby · IronOrr26</span>
