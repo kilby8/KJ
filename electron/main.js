@@ -311,7 +311,7 @@ ipcMain.handle('dialog:openFiles', async () => {
 
 // ── IPC: Scan a list of folders for files ───────────────────────────────────
 const SCAN_SUPPORTED_EXTS = new Set(['mp3', 'wav', 'mp4', 'mkv', 'cdg', 'zip', 'kar', 'ogg', 'flac', 'm4a', 'wma']);
-const SCAN_MAX_FILES = 5000;
+const SCAN_MAX_FILES = 15000;
 
 function scanFoldersDetailed(folderPaths) {
   const stack = [...folderPaths];
@@ -487,28 +487,25 @@ function extractPrimaryFields(meta) {
   };
 }
 
-// ── IPC: Read metadata for a list of file paths ──────────────────────────────
-ipcMain.handle('metadata:read', async (_event, filePaths) => {
-  const { parseFile } = await import('music-metadata');
-  const results = [];
-  const TAG_PARSE_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'wma', 'mp4', 'mkv', 'zip']);
-  const PARSE_RETRY_ATTEMPTS = 3;
-  const PARSE_RETRY_BASE_MS = 50;
-  const PARSE_RETRY_MAX_MS = 300;
+// ── Metadata parse helpers ───────────────────────────────────────────────────
+const TAG_PARSE_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'wma', 'mp4', 'mkv', 'zip']);
+const PARSE_RETRY_ATTEMPTS = 3;
+const PARSE_RETRY_BASE_MS = 50;
+const PARSE_RETRY_MAX_MS = 300;
 
-  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const nextRetryDelayMs = (attemptIndex) => {
-    const expDelay = Math.min(PARSE_RETRY_BASE_MS * (2 ** attemptIndex), PARSE_RETRY_MAX_MS);
-    const jitter = Math.floor(expDelay * ((Math.random() * 0.4) - 0.2)); // +/-20%
-    return Math.max(20, expDelay + jitter);
-  };
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const nextRetryDelayMs = (attemptIndex) => {
+  const expDelay = Math.min(PARSE_RETRY_BASE_MS * (2 ** attemptIndex), PARSE_RETRY_MAX_MS);
+  const jitter = Math.floor(expDelay * ((Math.random() * 0.4) - 0.2));
+  return Math.max(20, expDelay + jitter);
+};
 
-  const parseWithRetry = async (targetPath) => {
+async function makeParseWithRetry(parseFile) {
+  return async (targetPath) => {
     for (let attempt = 0; attempt < PARSE_RETRY_ATTEMPTS; attempt += 1) {
       try {
         return await parseFile(targetPath, { duration: false, skipCovers: true });
       } catch {
-        // Retry a few times before falling back to filename parsing.
         if (attempt < PARSE_RETRY_ATTEMPTS - 1) {
           await delay(nextRetryDelayMs(attempt));
         }
@@ -516,6 +513,105 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
     }
     return null;
   };
+}
+
+async function parseOneFile(fp, parseWithRetry) {
+  const ext = path.extname(fp).toLowerCase().slice(1);
+  let stat;
+  try {
+    stat = await fs.promises.stat(fp);
+  } catch {
+    return null;
+  }
+
+  let artist = '';
+  let title = '';
+  let album = '';
+  let discId = '';
+  let year = '';
+  let track = '';
+  let allTags = null;
+  let parseSucceeded = false;
+
+  if (TAG_PARSE_EXTS.has(ext) && ext !== 'zip') {
+    const meta = await parseWithRetry(fp);
+    if (meta) {
+      const extracted = extractPrimaryFields(meta);
+      artist = extracted.artist;
+      title = extracted.title;
+      album = extracted.album;
+      discId = extracted.discId;
+      year = extracted.year;
+      track = extracted.track;
+      allTags = extracted.allTags;
+      parseSucceeded = true;
+    }
+  } else if (ext === 'zip') {
+    try {
+      const AdmZip = require('adm-zip');
+      const zip = new AdmZip(fp);
+      const mp3Entry = zip.getEntries().find(e => e.entryName.toLowerCase().endsWith('.mp3'));
+      if (mp3Entry) {
+        const buf = mp3Entry.getData();
+        const tmpMp3 = path.join(app.getPath('temp'), `${TMP_MP3_PREFIX}${Date.now()}__.mp3`);
+        fs.writeFileSync(tmpMp3, buf);
+        try {
+          const meta = await parseWithRetry(tmpMp3);
+          if (meta) {
+            const extracted = extractPrimaryFields(meta);
+            artist = extracted.artist;
+            title = extracted.title;
+            album = extracted.album;
+            discId = extracted.discId;
+            year = extracted.year;
+            track = extracted.track;
+            allTags = extracted.allTags;
+            parseSucceeded = true;
+          }
+        } catch { /* empty */ }
+        try { fs.unlinkSync(tmpMp3); } catch { /* empty */ }
+      }
+    } catch { /* empty */ }
+  }
+
+  const baseName = path.basename(fp, path.extname(fp));
+
+  // Always prefer catalog disc ID from filename (e.g. KTYD486-08).
+  const fileDiscId = extractDiscIdFromText(baseName).discId;
+  if (fileDiscId) {
+    discId = fileDiscId;
+  } else if (!discId) {
+    discId = '';
+  }
+
+  const parsedFromName = parseFromFileName(baseName);
+  artist = artist || parsedFromName.artist;
+  title = title || parsedFromName.title;
+  discId = discId || parsedFromName.discId;
+
+  return {
+    filePath: fp,
+    fileName: path.basename(fp),
+    ext: ext.toUpperCase(),
+    size: stat.size,
+    artist,
+    title,
+    album,
+    discId,
+    year,
+    track,
+    baseName,
+    allTags,
+    metaSource: parseSucceeded ? 'parsed' : 'fallback',
+    stat,
+  };
+}
+
+// ── IPC: Read metadata for a list of file paths ──────────────────────────────
+ipcMain.handle('metadata:read', async (_event, filePaths) => {
+  const { parseFile } = await import('music-metadata');
+  const parseWithRetry = await makeParseWithRetry(parseFile);
+  const results = [];
 
   for (const fp of filePaths) {
     const ext = path.extname(fp).toLowerCase().slice(1);
@@ -534,96 +630,44 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
       continue;
     }
 
-    let artist = '';
-    let title = '';
-    let album = '';
-    let discId = '';
-    let year = '';
-    let track = '';
-    let allTags = null;
-    let parseSucceeded = false;
+    const record = await parseOneFile(fp, parseWithRetry);
+    if (!record) continue;
 
-    if (TAG_PARSE_EXTS.has(ext)) {
-      const meta = await parseWithRetry(fp);
-      if (meta) {
-        const extracted = extractPrimaryFields(meta);
-        artist = extracted.artist;
-        title = extracted.title;
-        album = extracted.album;
-        discId = extracted.discId;
-        year = extracted.year;
-        track = extracted.track;
-        allTags = extracted.allTags;
-        parseSucceeded = true;
-      }
-    } else if (ext === 'zip') {
-      try {
-        const AdmZip = require('adm-zip');
-        const zip = new AdmZip(fp);
-        const mp3Entry = zip.getEntries().find(e => e.entryName.toLowerCase().endsWith('.mp3'));
-        if (mp3Entry) {
-          const buf = mp3Entry.getData();
-          const tmpMp3 = path.join(app.getPath('temp'), `${TMP_MP3_PREFIX}${Date.now()}__.mp3`);
-          fs.writeFileSync(tmpMp3, buf);
-          try {
-            const meta = await parseWithRetry(tmpMp3);
-            if (meta) {
-            const extracted = extractPrimaryFields(meta);
-            artist = extracted.artist;
-            title = extracted.title;
-            album = extracted.album;
-            discId = extracted.discId;
-            year = extracted.year;
-            track = extracted.track;
-            allTags = extracted.allTags;
-              parseSucceeded = true;
-            }
-          } catch { /* empty */ }
-          try { fs.unlinkSync(tmpMp3); } catch { /* empty */ }
-        }
-      } catch { /* empty */ }
+    const { stat: _s, ...recordWithoutStat } = record;
+    results.push(recordWithoutStat);
+
+    const shouldCache = !isTagParseExt || record.metaSource === 'parsed';
+    if (shouldCache) setCachedMetadata(fp, stat, recordWithoutStat);
+  }
+  return results;
+});
+
+// ── IPC: Force-reparse a single file (bypasses cache) ───────────────────────
+ipcMain.handle('metadata:reparse', async (_event, filePaths) => {
+  const { parseFile } = await import('music-metadata');
+  const parseWithRetry = await makeParseWithRetry(parseFile);
+  const results = [];
+
+  for (const fp of filePaths) {
+    invalidateCachedMetadata(fp);
+
+    let stat;
+    try {
+      stat = await fs.promises.stat(fp);
+    } catch {
+      continue;
     }
 
-    const baseName = path.basename(fp, path.extname(fp));
+    const record = await parseOneFile(fp, parseWithRetry);
+    if (!record) continue;
 
-    // Always prefer a catalog disc ID extracted from the filename (e.g. KTYD486-08).
-    // Comment tags rarely contain structured disc IDs; if the filename has one, use it.
-    const fileDiscId = extractDiscIdFromText(baseName).discId;
-    if (fileDiscId) {
-      discId = fileDiscId;
-    } else if (!discId) {
-      discId = '';
-    }
+    const { stat: _s, ...recordWithoutStat } = record;
+    results.push(recordWithoutStat);
 
-    // Fill missing core fields from filename for all formats, not only fully-empty rows.
-    const parsedFromName = parseFromFileName(baseName);
-    artist = artist || parsedFromName.artist;
-    title = title || parsedFromName.title;
-    discId = discId || parsedFromName.discId;
-
-    const record = {
-      filePath: fp,
-      fileName: path.basename(fp),
-      ext: ext.toUpperCase(),
-      size: stat.size,
-      artist,
-      title,
-      album,
-      discId,
-      year,
-      track,
-      baseName,
-      allTags,
-      metaSource: parseSucceeded ? 'parsed' : 'fallback',
-    };
-    results.push(record);
-
-    // Avoid persisting likely transient empty reads for parsable formats.
-    const shouldCache = !isTagParseExt || parseSucceeded;
-
-    if (shouldCache) {
-      setCachedMetadata(fp, stat, record);
-    }
+    const ext = path.extname(fp).toLowerCase().slice(1);
+    const isTagParseExt = TAG_PARSE_EXTS.has(ext);
+    const shouldCache = !isTagParseExt || record.metaSource === 'parsed';
+    if (shouldCache) setCachedMetadata(fp, stat, recordWithoutStat);
   }
   return results;
 });

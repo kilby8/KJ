@@ -38,21 +38,6 @@ A cross-platform desktop karaoke file manager built with Electron + React. Desig
 > files are previewed in the UI but not persisted to disk. MP3 and MP3+G (ZIP) fully support
 > write-back via `node-id3`.
 
-## Auto Update Workflow
-
-The app checks for updates in packaged builds (not dev mode) and shows current version/status in the status bar.
-
-To publish an update for installed users:
-
-1. Bump `version` in `package.json` (for example `1.0.0` → `1.0.1`).
-2. Commit and push your code changes.
-3. Set a GitHub token in your shell session:
-   - PowerShell: `$env:GH_TOKEN="<your_token>"`
-4. Run:
-   - `npm run publish:electron`
-5. This uploads installer + update metadata to GitHub Releases for this repository.
-6. Installed users will receive update availability and download/install prompts automatically.
-
 ## Field Shift Operations
 
 When karaoke files are mislabeled (e.g., Artist shows the song title and Title shows the artist name), use:
@@ -68,6 +53,30 @@ When karaoke files are mislabeled (e.g., Artist shows the song title and Title s
 | `Ctrl+A` | Select all visible files |
 | `F2` | Edit tags for selected files |
 | `Esc` | Close modal / context menu |
+
+## Tech Stack
+
+- **Electron 41** — cross-platform desktop shell
+- **React 19** — UI framework
+- **Vite 8** — build tool
+- **music-metadata** — read audio/video tags (MP3, FLAC, OGG, MP4, etc.)
+- **node-id3** — write ID3 tags to MP3 and MP3+G files
+- **adm-zip** — read/write MP3+G zip archives
+
+## Auto Update Workflow
+
+The app checks for updates in packaged builds (not dev mode) and shows current version/status in the status bar.
+
+To publish an update for installed users:
+
+1. Bump `version` in `package.json` (for example `1.0.0` → `1.0.1`).
+2. Commit and push your code changes.
+3. Set a GitHub token in your shell session:
+   - PowerShell: `$env:GH_TOKEN="<your_token>"`
+4. Run:
+   - `npm run publish:electron`
+5. This uploads installer + update metadata to GitHub Releases for this repository.
+6. Installed users will receive update availability and download/install prompts automatically.
 
 ## Development
 
@@ -87,15 +96,6 @@ npm run build:electron
 # Build and publish release artifacts for auto-update
 npm run publish:electron
 ```
-
-## Tech Stack
-
-- **Electron 41** — cross-platform desktop shell
-- **React 19** — UI framework
-- **Vite 8** — build tool
-- **music-metadata** — read audio/video tags (MP3, FLAC, OGG, MP4, etc.)
-- **node-id3** — write ID3 tags to MP3 and MP3+G files
-- **adm-zip** — read/write MP3+G zip archives
 
 ## Web Paywall Page (Before Download)
 

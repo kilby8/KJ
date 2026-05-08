@@ -3,8 +3,9 @@ import React, { useState, useEffect } from 'react';
 /**
  * Modal for editing a single file's metadata tags.
  * When multiple files are selected, it shows a bulk-edit mode (blank = no change).
+ * onReparse – optional async callback (single-file only) that returns fresh metadata.
  */
-export default function EditModal({ files, onSave, onClose }) {
+export default function EditModal({ files, onSave, onClose, onReparse }) {
   const isBulk = files.length > 1;
   const asText = (v) => (v == null ? '' : String(v));
 
@@ -16,6 +17,7 @@ export default function EditModal({ files, onSave, onClose }) {
     year:    isBulk ? '' : asText(files[0]?.year),
     track:   isBulk ? '' : asText(files[0]?.track),
   });
+  const [reparsing, setReparsing] = useState(false);
 
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
 
@@ -34,6 +36,26 @@ export default function EditModal({ files, onSave, onClose }) {
       onSave(files, trimmed);
     }
     onClose();
+  };
+
+  const handleReparse = async () => {
+    if (!onReparse) return;
+    setReparsing(true);
+    try {
+      const fresh = await onReparse();
+      if (fresh) {
+        setForm({
+          artist: asText(fresh.artist),
+          title:  asText(fresh.title),
+          album:  asText(fresh.album),
+          discId: asText(fresh.discId),
+          year:   asText(fresh.year),
+          track:  asText(fresh.track),
+        });
+      }
+    } finally {
+      setReparsing(false);
+    }
   };
 
   // Close on Escape
@@ -144,6 +166,17 @@ export default function EditModal({ files, onSave, onClose }) {
 
         <div className="modal-footer">
           <button className="btn" onClick={onClose}>Cancel</button>
+          {!isBulk && onReparse && (
+            <button
+              className="btn"
+              onClick={handleReparse}
+              disabled={reparsing}
+              title="Re-read tags fresh from file, bypassing cache"
+              style={{ marginRight: 'auto' }}
+            >
+              {reparsing ? '⏳ Reparsing…' : '🔄 Reparse from File'}
+            </button>
+          )}
           <button className="btn primary" onClick={handleSave}>Save Changes</button>
         </div>
       </div>

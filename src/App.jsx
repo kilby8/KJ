@@ -8,7 +8,7 @@ import { useToasts, useSelection } from './hooks/useSelectionAndToasts';
 
 const logo = `${import.meta.env.BASE_URL}ikfs-logo.png`;
 const WRITABLE_EXTS = new Set(['MP3', 'ZIP', 'WAV', 'MP4', 'MKV', 'OGG', 'FLAC', 'M4A', 'WMA']);
-const MAX_UI_FILES = 5000;
+const MAX_UI_FILES = 15000;
 const ADMIN_TROUBLESHOOT_URL = 'https://kilby8.github.io/KJ/admin.html';
 
 // ── Sorting helper ──────────────────────────────────────────────────────────
@@ -325,6 +325,26 @@ export default function App() {
     addToast(msg, saveErr ? 'error' : (skipped ? 'info' : 'success'));
   }, [getSelectedFiles, addToast]);
 
+  // ── Reparse a single file bypassing cache ────────────────────────────────
+  const handleReparse = useCallback(async (file) => {
+    if (!window.electronAPI?.reparseMetadata) {
+      addToast('Reparse is not available in this build', 'info');
+      return null;
+    }
+    try {
+      const results = await window.electronAPI.reparseMetadata([file.filePath]);
+      const fresh = results?.[0];
+      if (fresh) {
+        setFiles(prev => prev.map(f => f.filePath === fresh.filePath ? fresh : f));
+        await refreshCacheStats();
+      }
+      return fresh || null;
+    } catch (err) {
+      addToast(`Reparse failed: ${err?.message || 'unknown error'}`, 'error');
+      return null;
+    }
+  }, [addToast, refreshCacheStats]);
+
   // ── Bulk save after modal edit ────────────────────────────────────────────
   const handleSaveEdit = useCallback(async (targetFiles, patch) => {
     const updated = targetFiles.map(f => ({ ...f, ...patch }));
@@ -625,6 +645,7 @@ export default function App() {
           files={editTarget}
           onSave={handleSaveEdit}
           onClose={() => setEditTarget(null)}
+          onReparse={editTarget.length === 1 ? () => handleReparse(editTarget[0]) : undefined}
         />
       )}
 

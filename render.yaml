@@ -24,7 +24,7 @@ services:
       - key: AUTH_DB_PATH
         value: /tmp/auth.sqlite
       - key: DOWNLOAD_URL
-        sync: false
+        value: https://github.com/kilby8/KJ/releases/download/v1.0.42/ironorr-karaoke-file-software-ikfs-setup-1.0.42.exe
       - key: DOWNLOAD_FILE_PATH
         sync: false
       - key: TOKEN_SECRET
