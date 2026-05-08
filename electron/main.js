@@ -477,6 +477,19 @@ function extractPrimaryFields(meta) {
 ipcMain.handle('metadata:read', async (_event, filePaths) => {
   const { parseFile } = await import('music-metadata');
   const results = [];
+  const TAG_PARSE_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'wma', 'mp4', 'mkv']);
+
+  const parseWithRetry = async (targetPath) => {
+    try {
+      return await parseFile(targetPath, { duration: false, skipCovers: true });
+    } catch {
+      try {
+        return await parseFile(targetPath, { duration: false, skipCovers: true });
+      } catch {
+        return null;
+      }
+    }
+  };
 
   for (const fp of filePaths) {
     const ext = path.extname(fp).toLowerCase().slice(1);
@@ -500,10 +513,11 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
     let year = '';
     let track = '';
     let allTags = null;
+    let parseSucceeded = false;
 
-    if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'wma', 'mp4', 'mkv'].includes(ext)) {
-      try {
-        const meta = await parseFile(fp, { duration: false, skipCovers: true });
+    if (TAG_PARSE_EXTS.has(ext)) {
+      const meta = await parseWithRetry(fp);
+      if (meta) {
         const extracted = extractPrimaryFields(meta);
         artist = extracted.artist;
         title = extracted.title;
@@ -512,8 +526,7 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
         year = extracted.year;
         track = extracted.track;
         allTags = extracted.allTags;
-      } catch {
-        // leave empty — file may have no tags
+        parseSucceeded = true;
       }
     } else if (ext === 'zip') {
       try {
@@ -525,7 +538,8 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
           const tmpMp3 = path.join(app.getPath('temp'), `${TMP_MP3_PREFIX}${Date.now()}__.mp3`);
           fs.writeFileSync(tmpMp3, buf);
           try {
-            const meta = await parseFile(tmpMp3, { duration: false, skipCovers: true });
+            const meta = await parseWithRetry(tmpMp3);
+            if (meta) {
             const extracted = extractPrimaryFields(meta);
             artist = extracted.artist;
             title = extracted.title;
@@ -534,6 +548,8 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
             year = extracted.year;
             track = extracted.track;
             allTags = extracted.allTags;
+              parseSucceeded = true;
+            }
           } catch { /* empty */ }
           try { fs.unlinkSync(tmpMp3); } catch { /* empty */ }
         }
@@ -551,12 +567,11 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
       discId = '';
     }
 
-    if (ext === 'cdg' || ext === 'kar' || (!artist && !title && !discId)) {
-      const parsed = parseFromFileName(baseName);
-      artist = artist || parsed.artist;
-      title = title || parsed.title;
-      discId = discId || parsed.discId;
-    }
+    // Fill missing core fields from filename for all formats, not only fully-empty rows.
+    const parsedFromName = parseFromFileName(baseName);
+    artist = artist || parsedFromName.artist;
+    title = title || parsedFromName.title;
+    discId = discId || parsedFromName.discId;
 
     const record = {
       filePath: fp,
@@ -573,7 +588,16 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
       allTags,
     };
     results.push(record);
-    setCachedMetadata(fp, stat, record);
+
+    // Avoid persisting likely transient empty reads for parsable formats.
+    const shouldCache =
+      !TAG_PARSE_EXTS.has(ext)
+      || parseSucceeded
+      || Boolean(artist || title || album || year || track || discId || allTags);
+
+    if (shouldCache) {
+      setCachedMetadata(fp, stat, record);
+    }
   }
   return results;
 });
