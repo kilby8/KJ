@@ -15,6 +15,98 @@ if (!ffmpegBinaryPath) {
   }
 }
 
+const METADATA_CACHE_VERSION = 1;
+const METADATA_CACHE_MAX_ENTRIES = 200000;
+let metadataCache = new Map();
+let metadataCacheLoaded = false;
+let metadataCacheDirty = false;
+let metadataCacheFlushTimer = null;
+
+function getMetadataCachePath() {
+  return path.join(app.getPath('userData'), 'metadata-cache.json');
+}
+
+function ensureMetadataCacheLoaded() {
+  if (metadataCacheLoaded) return;
+  metadataCacheLoaded = true;
+
+  const cachePath = getMetadataCachePath();
+  try {
+    if (!fs.existsSync(cachePath)) return;
+    const raw = fs.readFileSync(cachePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed?.version !== METADATA_CACHE_VERSION || !Array.isArray(parsed.entries)) return;
+    metadataCache = new Map(parsed.entries);
+  } catch (err) {
+    console.warn(`Failed to load metadata cache: ${err?.message || err}`);
+    metadataCache = new Map();
+  }
+}
+
+async function flushMetadataCacheNow() {
+  if (!metadataCacheDirty) return;
+  metadataCacheDirty = false;
+
+  const cachePath = getMetadataCachePath();
+  const payload = {
+    version: METADATA_CACHE_VERSION,
+    entries: Array.from(metadataCache.entries()),
+  };
+
+  try {
+    await fs.promises.mkdir(path.dirname(cachePath), { recursive: true });
+    await fs.promises.writeFile(cachePath, JSON.stringify(payload), 'utf8');
+  } catch (err) {
+    console.warn(`Failed to persist metadata cache: ${err?.message || err}`);
+  }
+}
+
+function scheduleMetadataCacheFlush() {
+  metadataCacheDirty = true;
+  if (metadataCacheFlushTimer) return;
+  metadataCacheFlushTimer = setTimeout(async () => {
+    metadataCacheFlushTimer = null;
+    await flushMetadataCacheNow();
+  }, 1500);
+}
+
+function metadataFingerprint(stat) {
+  return `${Math.trunc(stat?.mtimeMs || 0)}:${stat?.size || 0}`;
+}
+
+function getCachedMetadata(filePath, stat) {
+  ensureMetadataCacheLoaded();
+  const entry = metadataCache.get(filePath);
+  if (!entry) return null;
+  if (entry.fp !== metadataFingerprint(stat)) return null;
+  return entry.data || null;
+}
+
+function setCachedMetadata(filePath, stat, data) {
+  ensureMetadataCacheLoaded();
+  if (metadataCache.has(filePath)) metadataCache.delete(filePath);
+  metadataCache.set(filePath, {
+    fp: metadataFingerprint(stat),
+    data,
+    ts: Date.now(),
+  });
+
+  while (metadataCache.size > METADATA_CACHE_MAX_ENTRIES) {
+    const oldestKey = metadataCache.keys().next().value;
+    if (!oldestKey) break;
+    metadataCache.delete(oldestKey);
+  }
+
+  scheduleMetadataCacheFlush();
+}
+
+function invalidateCachedMetadata(filePath) {
+  ensureMetadataCacheLoaded();
+  if (!metadataCache.has(filePath)) return;
+  metadataCache.delete(filePath);
+  scheduleMetadataCacheFlush();
+}
+
 function sendUpdateStatus(status, data = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('update:status', { status, ...data });
@@ -97,6 +189,27 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  if (metadataCacheFlushTimer) {
+    clearTimeout(metadataCacheFlushTimer);
+    metadataCacheFlushTimer = null;
+  }
+  // Best-effort synchronous flush during app shutdown.
+  if (!metadataCacheDirty) return;
+  metadataCacheDirty = false;
+  try {
+    const cachePath = getMetadataCachePath();
+    const payload = {
+      version: METADATA_CACHE_VERSION,
+      entries: Array.from(metadataCache.entries()),
+    };
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.writeFileSync(cachePath, JSON.stringify(payload), 'utf8');
+  } catch {
+    // Ignore shutdown flush failures.
+  }
 });
 
 // ── IPC: Open folder dialog ──────────────────────────────────────────────────
@@ -230,7 +343,18 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
 
   for (const fp of filePaths) {
     const ext = path.extname(fp).toLowerCase().slice(1);
-    const stat = await fs.promises.stat(fp);
+    let stat;
+    try {
+      stat = await fs.promises.stat(fp);
+    } catch {
+      continue;
+    }
+
+    const cached = getCachedMetadata(fp, stat);
+    if (cached) {
+      results.push(cached);
+      continue;
+    }
 
     let artist = '';
     let title = '';
@@ -302,7 +426,7 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
       discId = discId || parsed.discId;
     }
 
-    results.push({
+    const record = {
       filePath: fp,
       fileName: path.basename(fp),
       ext: ext.toUpperCase(),
@@ -314,7 +438,9 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
       year,
       track,
       baseName,
-    });
+    };
+    results.push(record);
+    setCachedMetadata(fp, stat, record);
   }
   return results;
 });
@@ -429,6 +555,7 @@ ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
       merged.comment = { language: 'eng', shortText: '', text: tags.discId };
     }
     const success = NodeID3.write(merged, filePath);
+    if (success !== false) invalidateCachedMetadata(filePath);
     return { ok: success !== false };
   }
 
@@ -462,6 +589,7 @@ ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
       // Write to a temp file first, then atomically replace the original
       zip.writeZip(tmpZip);
       await replaceFileAtomic(tmpZip, filePath);
+      invalidateCachedMetadata(filePath);
       return { ok: true };
     } catch (err) {
       await fs.promises.unlink(tmpZip).catch(() => {});
@@ -473,7 +601,9 @@ ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
     return { ok: false, error: `Tag writing not supported for .${ext} files` };
   }
 
-  return writeMetadataWithFfmpeg(filePath, tags || {}, ext);
+  const ffmpegResult = await writeMetadataWithFfmpeg(filePath, tags || {}, ext);
+  if (ffmpegResult?.ok) invalidateCachedMetadata(filePath);
+  return ffmpegResult;
 });
 
 // ── IPC: App version and updates ────────────────────────────────────────────
