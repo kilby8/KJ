@@ -345,6 +345,47 @@ export default function App() {
     }
   }, [addToast, refreshCacheStats]);
 
+  // ── Parse metadata from internet sources (single-file modal action) ──────
+  const handleOnlineParse = useCallback(async (file) => {
+    if (!window.electronAPI?.lookupMetadataOnline) {
+      addToast('Online metadata lookup is not available in this build', 'info');
+      return handleReparse(file);
+    }
+
+    try {
+      const result = await window.electronAPI.lookupMetadataOnline({
+        artist: file.artist,
+        title: file.title,
+        album: file.album,
+        discId: file.discId,
+        year: file.year,
+        track: file.track,
+        fileName: file.fileName,
+      });
+
+      if (result?.ok && result.metadata) {
+        const fresh = {
+          ...file,
+          artist: result.metadata.artist || file.artist || '',
+          title: result.metadata.title || file.title || '',
+          album: result.metadata.album || file.album || '',
+          discId: result.metadata.discId || file.discId || '',
+          year: result.metadata.year || file.year || '',
+          track: result.metadata.track || file.track || '',
+        };
+        setFiles(prev => prev.map(f => f.filePath === fresh.filePath ? fresh : f));
+        addToast(`Online metadata match from ${result.source}`, 'success');
+        return fresh;
+      }
+
+      addToast(result?.error || 'No online metadata match found; using local parse', 'info');
+      return handleReparse(file);
+    } catch (err) {
+      addToast(`Online lookup failed: ${err?.message || 'unknown error'}`, 'error');
+      return handleReparse(file);
+    }
+  }, [addToast, handleReparse]);
+
   // ── Bulk save after modal edit ────────────────────────────────────────────
   const handleSaveEdit = useCallback(async (targetFiles, patch) => {
     const updated = targetFiles.map(f => ({ ...f, ...patch }));
@@ -645,7 +686,7 @@ export default function App() {
           files={editTarget}
           onSave={handleSaveEdit}
           onClose={() => setEditTarget(null)}
-          onReparse={editTarget.length === 1 ? () => handleReparse(editTarget[0]) : undefined}
+          onReparse={editTarget.length === 1 ? () => handleOnlineParse(editTarget[0]) : undefined}
         />
       )}
 

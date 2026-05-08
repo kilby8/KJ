@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Metadata
   readMetadata: (filePaths) => ipcRenderer.invoke('metadata:read', filePaths),
   reparseMetadata: (filePaths) => ipcRenderer.invoke('metadata:reparse', filePaths),
+  lookupMetadataOnline: (seed) => ipcRenderer.invoke('metadata:lookupOnline', seed),
   writeMetadata: (filePath, tags) => ipcRenderer.invoke('metadata:write', filePath, tags),
   getMetadataCacheStats: () => ipcRenderer.invoke('metadata:getCacheStats'),
 

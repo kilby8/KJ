@@ -171,10 +171,10 @@ export default function EditModal({ files, onSave, onClose, onReparse }) {
               className="btn"
               onClick={handleReparse}
               disabled={reparsing}
-              title="Re-read tags fresh from file, bypassing cache"
+              title="Search online sources for matching metadata"
               style={{ marginRight: 'auto' }}
             >
-              {reparsing ? '⏳ Reparsing…' : '🔄 Reparse from File'}
+              {reparsing ? 'Searching…' : 'Parse Data (Internet)'}
             </button>
           )}
           <button className="btn primary" onClick={handleSave}>Save Changes</button>

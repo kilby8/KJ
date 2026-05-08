@@ -487,6 +487,151 @@ function extractPrimaryFields(meta) {
   };
 }
 
+function normalizeLookupText(value) {
+  return String(value || '').replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function buildLookupSearchTerm(seed) {
+  const artist = normalizeLookupText(seed?.artist);
+  const title = normalizeLookupText(seed?.title);
+  const album = normalizeLookupText(seed?.album);
+  const discId = normalizeLookupText(seed?.discId);
+  const fileName = normalizeLookupText(path.basename(seed?.fileName || '', path.extname(seed?.fileName || '')));
+
+  if (artist && title) return `${artist} ${title}`;
+  if (title && album) return `${title} ${album}`;
+  if (discId && title) return `${discId} ${title}`;
+  if (discId) return discId;
+  if (title) return title;
+  return fileName;
+}
+
+function tokenize(value) {
+  return new Set(
+    normalizeLookupText(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((v) => v.length > 1),
+  );
+}
+
+function overlapScore(left, right) {
+  if (!left || !right) return 0;
+  const l = tokenize(left);
+  const r = tokenize(right);
+  if (!l.size || !r.size) return 0;
+  let common = 0;
+  for (const token of l) {
+    if (r.has(token)) common += 1;
+  }
+  return common / Math.max(l.size, r.size);
+}
+
+function scoreLookupCandidate(seed, candidate) {
+  let score = 0;
+  score += overlapScore(seed?.title, candidate?.title) * 55;
+  score += overlapScore(seed?.artist, candidate?.artist) * 35;
+  score += overlapScore(seed?.album, candidate?.album) * 15;
+  if (normalizeLookupText(seed?.discId) && normalizeLookupText(candidate?.discId || '').includes(normalizeLookupText(seed?.discId))) {
+    score += 20;
+  }
+  return score;
+}
+
+async function fetchJsonWithTimeout(url, headers = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5500);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function lookupFromItunes(term) {
+  const endpoint = `https://itunes.apple.com/search?media=music&entity=song&limit=12&term=${encodeURIComponent(term)}`;
+  const json = await fetchJsonWithTimeout(endpoint, { 'User-Agent': 'IKFS/1.0.43 (metadata lookup)' });
+  const results = Array.isArray(json?.results) ? json.results : [];
+  return results.map((item) => ({
+    source: 'itunes',
+    artist: normalizeLookupText(item.artistName),
+    title: normalizeLookupText(item.trackName),
+    album: normalizeLookupText(item.collectionName),
+    year: item.releaseDate ? String(item.releaseDate).slice(0, 4) : '',
+    track: item.trackNumber ? String(item.trackNumber) : '',
+  }));
+}
+
+async function lookupFromMusicBrainz(term) {
+  const endpoint = `https://musicbrainz.org/ws/2/recording?fmt=json&limit=12&query=${encodeURIComponent(term)}`;
+  const json = await fetchJsonWithTimeout(endpoint, {
+    'User-Agent': 'IKFS/1.0.43 (metadata lookup; https://github.com/kilby8/KJ)',
+    Accept: 'application/json',
+  });
+  const recordings = Array.isArray(json?.recordings) ? json.recordings : [];
+  return recordings.map((item) => {
+    const firstRelease = Array.isArray(item.releases) ? item.releases[0] : null;
+    const firstCredit = Array.isArray(item['artist-credit']) ? item['artist-credit'][0] : null;
+    return {
+      source: 'musicbrainz',
+      artist: normalizeLookupText(firstCredit?.name),
+      title: normalizeLookupText(item.title),
+      album: normalizeLookupText(firstRelease?.title),
+      year: firstRelease?.date ? String(firstRelease.date).slice(0, 4) : '',
+      track: '',
+    };
+  });
+}
+
+async function lookupMetadataOnline(seed) {
+  if (typeof fetch !== 'function') {
+    return { ok: false, error: 'Online lookup is unavailable in this runtime' };
+  }
+
+  const term = buildLookupSearchTerm(seed);
+  if (!term) {
+    return { ok: false, error: 'Not enough data to search online metadata' };
+  }
+
+  const [itunes, musicBrainz] = await Promise.all([
+    lookupFromItunes(term),
+    lookupFromMusicBrainz(term),
+  ]);
+  const candidates = [...itunes, ...musicBrainz]
+    .map((candidate) => ({
+      ...candidate,
+      score: scoreLookupCandidate(seed, candidate),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const best = candidates[0];
+  if (!best || best.score < 16) {
+    return { ok: false, error: 'No close online metadata match found' };
+  }
+
+  return {
+    ok: true,
+    source: best.source,
+    metadata: {
+      artist: best.artist || normalizeLookupText(seed?.artist),
+      title: best.title || normalizeLookupText(seed?.title),
+      album: best.album || normalizeLookupText(seed?.album),
+      year: best.year || String(seed?.year || ''),
+      track: best.track || String(seed?.track || ''),
+      discId: normalizeLookupText(seed?.discId),
+    },
+  };
+}
+
 // ── Metadata parse helpers ───────────────────────────────────────────────────
 const TAG_PARSE_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'wma', 'mp4', 'mkv', 'zip']);
 const PARSE_RETRY_ATTEMPTS = 3;
@@ -671,6 +816,8 @@ ipcMain.handle('metadata:reparse', async (_event, filePaths) => {
   }
   return results;
 });
+
+ipcMain.handle('metadata:lookupOnline', async (_event, seed) => lookupMetadataOnline(seed || {}));
 
 ipcMain.handle('metadata:getCacheStats', async () => {
   ensureMetadataCacheLoaded();
