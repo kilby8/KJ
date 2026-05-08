@@ -21,6 +21,7 @@ let metadataCache = new Map();
 let metadataCacheLoaded = false;
 let metadataCacheDirty = false;
 let metadataCacheFlushTimer = null;
+let metadataCacheStats = { hits: 0, misses: 0 };
 
 function getMetadataCachePath() {
   return path.join(app.getPath('userData'), 'metadata-cache.json');
@@ -77,8 +78,15 @@ function metadataFingerprint(stat) {
 function getCachedMetadata(filePath, stat) {
   ensureMetadataCacheLoaded();
   const entry = metadataCache.get(filePath);
-  if (!entry) return null;
-  if (entry.fp !== metadataFingerprint(stat)) return null;
+  if (!entry) {
+    metadataCacheStats.misses += 1;
+    return null;
+  }
+  if (entry.fp !== metadataFingerprint(stat)) {
+    metadataCacheStats.misses += 1;
+    return null;
+  }
+  metadataCacheStats.hits += 1;
   return entry.data || null;
 }
 
@@ -443,6 +451,14 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
     setCachedMetadata(fp, stat, record);
   }
   return results;
+});
+
+ipcMain.handle('metadata:getCacheStats', async () => {
+  ensureMetadataCacheLoaded();
+  return {
+    ...metadataCacheStats,
+    entries: metadataCache.size,
+  };
 });
 
 // ── IPC: Write metadata back to file ─────────────────────────────────────────

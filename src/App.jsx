@@ -33,8 +33,19 @@ export default function App() {
   const [appVersion, setAppVersion] = useState('dev');
   const [updateStatus, setUpdateStatus] = useState('');
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [cacheStats, setCacheStats] = useState({ hits: 0, misses: 0, entries: 0 });
 
   const { toasts, addToast, removeToast } = useToasts();
+
+  const refreshCacheStats = useCallback(async () => {
+    if (!window.electronAPI?.getMetadataCacheStats) return;
+    try {
+      const stats = await window.electronAPI.getMetadataCacheStats();
+      if (stats) setCacheStats(stats);
+    } catch {
+      // Ignore stats refresh errors; loading flow should continue.
+    }
+  }, []);
 
   const toShortUpdateMessage = useCallback((message) => {
     if (!message) return 'unknown error';
@@ -173,6 +184,7 @@ export default function App() {
       }
 
       setFiles(results);
+      await refreshCacheStats();
       addToast(`Loaded ${results.length} file${results.length !== 1 ? 's' : ''}`, 'success');
     } catch (err) {
       addToast(`Error loading files: ${err.message}`, 'error');
@@ -180,7 +192,7 @@ export default function App() {
       setLoading(false);
       setLoadProgress(100);
     }
-  }, [clearSelection, addToast]);
+  }, [clearSelection, addToast, refreshCacheStats]);
 
   // ── Open folder ──────────────────────────────────────────────────────────
   const handleOpenFolder = useCallback(async () => {
@@ -390,6 +402,8 @@ export default function App() {
   // ── Total size ────────────────────────────────────────────────────────────
   const totalSize = useMemo(() =>
     files.reduce((sum, f) => sum + (f.size || 0), 0), [files]);
+  const cacheTotal = (cacheStats?.hits || 0) + (cacheStats?.misses || 0);
+  const cacheHitRate = cacheTotal > 0 ? Math.round(((cacheStats?.hits || 0) / cacheTotal) * 100) : null;
 
   return (
     <div className="app">
@@ -520,6 +534,9 @@ export default function App() {
           <>
             <span>📁 {files.length} files · {formatSize(totalSize)}</span>
             {selected.size > 0 && <span>✅ {selected.size} selected</span>}
+            {cacheHitRate !== null && (
+              <span>🧠 Cache {cacheHitRate}% ({cacheStats.hits}/{cacheTotal})</span>
+            )}
           </>
         )}
         <span style={{ marginLeft: 'auto', color: 'var(--text-dim)' }}
