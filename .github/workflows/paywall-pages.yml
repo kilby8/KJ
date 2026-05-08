@@ -34,6 +34,8 @@ jobs:
           cp paywall.css pages/paywall.css
           cp paywall.js pages/paywall.js
           cp paywall.config.js pages/paywall.config.js
+          cp admin.html pages/admin.html
+          cp admin.js pages/admin.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

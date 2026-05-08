@@ -9,6 +9,7 @@ import { useToasts, useSelection } from './hooks/useSelectionAndToasts';
 const logo = `${import.meta.env.BASE_URL}ikfs-logo.png`;
 const WRITABLE_EXTS = new Set(['MP3', 'ZIP', 'WAV', 'MP4', 'MKV', 'OGG', 'FLAC', 'M4A', 'WMA']);
 const MAX_UI_FILES = 5000;
+const ADMIN_TROUBLESHOOT_URL = 'https://kilby8.github.io/KJ/admin.html';
 
 // ── Sorting helper ──────────────────────────────────────────────────────────
 function sortFiles(files, key, dir) {
@@ -136,6 +137,18 @@ export default function App() {
     } catch (err) {
       addToast(err?.message || 'Unable to reset updater cache', 'error');
     }
+  }, [addToast]);
+
+  const handleOpenTroubleshoot = useCallback(async () => {
+    if (window.electronAPI?.openExternal) {
+      const result = await window.electronAPI.openExternal(ADMIN_TROUBLESHOOT_URL);
+      if (!result?.ok) {
+        addToast(result?.error || 'Unable to open troubleshooting page', 'error');
+      }
+      return;
+    }
+
+    window.open(ADMIN_TROUBLESHOOT_URL, '_blank', 'noopener,noreferrer');
   }, [addToast]);
 
   // ── Filtered + sorted view ────────────────────────────────────────────────
@@ -574,6 +587,14 @@ export default function App() {
           title="Check for updates"
         >
           {checkingUpdate ? 'Checking…' : 'Check Updates'}
+        </button>
+        <button
+          className="btn"
+          style={{ marginLeft: 6, padding: '2px 8px', fontSize: 11 }}
+          onClick={handleOpenTroubleshoot}
+          title="Open admin troubleshooting page"
+        >
+          Bug / Troubleshoot
         </button>
         {isWindowsClient && (
           <button

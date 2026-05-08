@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IKFS Admin Troubleshooting</title>
+    <link rel="stylesheet" href="paywall.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="card">
+        <p class="eyebrow">IronOrr Karaoke File Software (IKFS)</p>
+        <h1>Admin Troubleshooting</h1>
+        <p class="subtitle">Diagnostics for support and deployment checks.</p>
+
+        <div class="actions">
+          <button id="refreshBtn" class="btn primary" type="button">Refresh Diagnostics</button>
+          <a class="btn" href="index.html">Back to Login</a>
+        </div>
+
+        <div id="status" class="status" aria-live="polite"></div>
+
+        <section class="download">
+          <p class="download-text">Latest diagnostics:</p>
+          <pre id="diagnostics" class="diag-box">(not loaded)</pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="paywall.config.js"></script>
+    <script src="admin.js"></script>
+  </body>
+</html>
+

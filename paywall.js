@@ -10,10 +10,13 @@
     status: document.getElementById('status'),
     downloadSection: document.getElementById('downloadSection'),
     downloadBtn: document.getElementById('downloadBtn'),
+    adminSection: document.getElementById('adminSection'),
+    adminBtn: document.getElementById('adminBtn'),
   };
 
   const storageKey = cfg.storageKey || 'ikfs_download_unlocked';
   const tokenStorageKey = `${storageKey}_token`;
+  const adminStorageKey = `${storageKey}_is_admin`;
   const apiStorageKey = `${storageKey}_api_base`;
 
   function setStatus(text) {
@@ -42,14 +45,24 @@
     return localStorage.getItem(tokenStorageKey) || '';
   }
 
-  function setStoredToken(token) {
+  function isAdminSession() {
+    return localStorage.getItem(adminStorageKey) === '1';
+  }
+
+  function setStoredToken(token, isAdmin) {
     if (token) {
       localStorage.setItem(storageKey, '1');
       localStorage.setItem(tokenStorageKey, token);
+      localStorage.setItem(adminStorageKey, isAdmin ? '1' : '0');
       return;
     }
     localStorage.removeItem(storageKey);
     localStorage.removeItem(tokenStorageKey);
+    localStorage.removeItem(adminStorageKey);
+  }
+
+  function getAdminPageUrl() {
+    return cfg.adminPageUrl || 'admin.html';
   }
 
   function applyDownloadLink(token) {
@@ -61,10 +74,19 @@
   function updateGate() {
     const token = getStoredToken();
     const unlocked = Boolean(token);
+    const adminUnlocked = unlocked && isAdminSession();
     els.downloadSection.classList.toggle('hidden', !unlocked);
+    if (els.adminSection) {
+      els.adminSection.classList.toggle('hidden', !adminUnlocked);
+    }
+    if (els.adminBtn) {
+      els.adminBtn.href = getAdminPageUrl();
+    }
     applyDownloadLink(token);
     if (unlocked) {
-      setStatus('Signed in. Download unlocked for this browser session.');
+      setStatus(adminUnlocked
+        ? 'Signed in as admin. Download and troubleshooting tools unlocked.'
+        : 'Signed in. Download unlocked for this browser session.');
     }
   }
 
@@ -96,7 +118,10 @@
       throw new Error(data?.error || `Login failed (${res.status})`);
     }
 
-    return data.token;
+    return {
+      token: data.token,
+      isAdmin: Boolean(data.isAdmin),
+    };
   }
 
   function applyConfig() {
@@ -124,8 +149,8 @@
 
     try {
       setStatus('Signing in...');
-      const token = await login(username, password);
-      setStoredToken(token);
+      const auth = await login(username, password);
+      setStoredToken(auth.token, auth.isAdmin);
       els.password.value = '';
       updateGate();
     } catch (err) {

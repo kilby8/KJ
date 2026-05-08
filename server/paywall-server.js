@@ -37,7 +37,7 @@ app.use((req, res, next) => {
   const allowedOrigin = PAYWALL_ORIGIN || '*';
   res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -56,6 +56,12 @@ function createDownloadToken(subject) {
   const exp = Date.now() + Number(TOKEN_TTL_SECONDS) * 1000;
   const token = signToken({ sub: subject, exp }, TOKEN_SECRET);
   return { token, expiresAt: exp };
+}
+
+function parseBearerToken(req) {
+  const header = req.headers.authorization || '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1] : '';
 }
 
 app.post('/api/auth/login', (req, res) => {
@@ -81,7 +87,8 @@ app.post('/api/auth/login', (req, res) => {
   }
 
   const { token, expiresAt } = createDownloadToken(username);
-  return res.json({ ok: true, token, expiresAt });
+  const isAdmin = username.toLowerCase() === 'admin';
+  return res.json({ ok: true, token, expiresAt, username, isAdmin });
 });
 
 app.get('/api/auth/login', (_req, res) => {
@@ -108,6 +115,42 @@ app.get('/api/download', (req, res) => {
   }
 
   return res.status(503).json({ ok: false, error: 'Download not configured on server. Set DOWNLOAD_URL or DOWNLOAD_FILE_PATH.' });
+});
+
+app.get('/api/admin/troubleshoot', (req, res) => {
+  if (!TOKEN_SECRET) {
+    return res.status(503).json({ ok: false, error: 'Server not configured: missing TOKEN_SECRET' });
+  }
+
+  const token = parseBearerToken(req);
+  const parsed = verifyToken(token, TOKEN_SECRET);
+  if (!parsed) {
+    return res.status(401).json({ ok: false, error: 'Missing or invalid admin token' });
+  }
+
+  const subject = String(parsed.sub || '').trim().toLowerCase();
+  if (subject !== 'admin') {
+    return res.status(403).json({ ok: false, error: 'Admin access required' });
+  }
+
+  const missing = [];
+  if (!TOKEN_SECRET) missing.push('TOKEN_SECRET');
+  if (!DOWNLOAD_URL && !absoluteDownloadPath) missing.push('DOWNLOAD_URL|DOWNLOAD_FILE_PATH');
+
+  return res.json({
+    ok: true,
+    serverTime: new Date().toISOString(),
+    authMode: 'login',
+    authDbPath: authStore?.dbPath || null,
+    authDbPersistence: authStore?.persistenceMode || null,
+    downloadMode: DOWNLOAD_URL ? 'redirect' : (absoluteDownloadPath ? 'file' : 'unconfigured'),
+    missingConfig: missing,
+    endpoints: {
+      health: '/api/health',
+      login: '/api/auth/login',
+      download: '/api/download?token=...'
+    }
+  });
 });
 
 app.get('/api/health', (_req, res) => {

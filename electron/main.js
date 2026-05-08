@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -855,3 +855,20 @@ ipcMain.handle('app:checkForUpdates', async () => {
     return { ok: false, message: err?.message || 'Failed to check for updates' };
   }
 });
+
+ipcMain.handle('app:openExternal', async (_event, url) => {
+  const target = String(url || '').trim();
+  if (!target) return { ok: false, error: 'Missing URL' };
+
+  try {
+    const parsed = new URL(target);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { ok: false, error: 'Only http/https URLs are allowed' };
+    }
+    await shell.openExternal(parsed.toString());
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err?.message || 'Failed to open URL' };
+  }
+});
+
