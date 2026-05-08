@@ -15,7 +15,7 @@ if (!ffmpegBinaryPath) {
   }
 }
 
-const METADATA_CACHE_VERSION = 1;
+const METADATA_CACHE_VERSION = 2;
 const METADATA_CACHE_MAX_ENTRIES = 200000;
 const TMP_MP3_PREFIX = '__ikfs_tmp_';
 const STALE_TMP_AGE_MS = 24 * 60 * 60 * 1000;
@@ -170,6 +170,20 @@ function sendUpdateStatus(status, data = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('update:status', { status, ...data });
   }
+}
+
+function getUpdateCacheCandidatePaths() {
+  const candidates = new Set();
+  const localAppData = process.env.LOCALAPPDATA || '';
+  if (localAppData) {
+    const appNameSlug = (app.getName() || 'ikfs').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    candidates.add(path.join(localAppData, `${appNameSlug}-updater`));
+    // Keep known updater folder naming used by existing Windows clients.
+    candidates.add(path.join(localAppData, 'ironorr-karaoke-file-system-ikfs-updater'));
+  }
+
+  candidates.add(path.join(app.getPath('userData'), 'pending'));
+  return Array.from(candidates).filter(Boolean);
 }
 
 function setupAutoUpdater() {
@@ -477,18 +491,30 @@ function extractPrimaryFields(meta) {
 ipcMain.handle('metadata:read', async (_event, filePaths) => {
   const { parseFile } = await import('music-metadata');
   const results = [];
-  const TAG_PARSE_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'wma', 'mp4', 'mkv']);
+  const TAG_PARSE_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'wma', 'mp4', 'mkv', 'zip']);
+  const PARSE_RETRY_ATTEMPTS = 3;
+  const PARSE_RETRY_BASE_MS = 50;
+  const PARSE_RETRY_MAX_MS = 300;
+
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const nextRetryDelayMs = (attemptIndex) => {
+    const expDelay = Math.min(PARSE_RETRY_BASE_MS * (2 ** attemptIndex), PARSE_RETRY_MAX_MS);
+    const jitter = Math.floor(expDelay * ((Math.random() * 0.4) - 0.2)); // +/-20%
+    return Math.max(20, expDelay + jitter);
+  };
 
   const parseWithRetry = async (targetPath) => {
-    try {
-      return await parseFile(targetPath, { duration: false, skipCovers: true });
-    } catch {
+    for (let attempt = 0; attempt < PARSE_RETRY_ATTEMPTS; attempt += 1) {
       try {
         return await parseFile(targetPath, { duration: false, skipCovers: true });
       } catch {
-        return null;
+        // Retry a few times before falling back to filename parsing.
+        if (attempt < PARSE_RETRY_ATTEMPTS - 1) {
+          await delay(nextRetryDelayMs(attempt));
+        }
       }
     }
+    return null;
   };
 
   for (const fp of filePaths) {
@@ -501,7 +527,9 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
     }
 
     const cached = getCachedMetadata(fp, stat);
-    if (cached) {
+    const isTagParseExt = TAG_PARSE_EXTS.has(ext);
+    const cachedIsHighQuality = cached?.metaSource === 'parsed';
+    if (cached && (!isTagParseExt || cachedIsHighQuality)) {
       results.push(cached);
       continue;
     }
@@ -586,14 +614,12 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
       track,
       baseName,
       allTags,
+      metaSource: parseSucceeded ? 'parsed' : 'fallback',
     };
     results.push(record);
 
     // Avoid persisting likely transient empty reads for parsable formats.
-    const shouldCache =
-      !TAG_PARSE_EXTS.has(ext)
-      || parseSucceeded
-      || Boolean(artist || title || album || year || track || discId || allTags);
+    const shouldCache = !isTagParseExt || parseSucceeded;
 
     if (shouldCache) {
       setCachedMetadata(fp, stat, record);
@@ -607,6 +633,48 @@ ipcMain.handle('metadata:getCacheStats', async () => {
   return {
     ...metadataCacheStats,
     entries: metadataCache.size,
+  };
+});
+
+ipcMain.handle('app:resetUpdateCache', async () => {
+  if (process.platform !== 'win32') {
+    return { ok: false, error: 'Reset update cache is only supported on Windows' };
+  }
+
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const candidates = getUpdateCacheCandidatePaths();
+  const removed = [];
+  const missing = [];
+  const failed = [];
+
+  for (const candidate of candidates) {
+    // Guard against accidental deletion outside expected roots.
+    if (localAppData && candidate.startsWith(localAppData)) {
+      // pass
+    } else if (!candidate.startsWith(app.getPath('userData'))) {
+      continue;
+    }
+
+    try {
+      await fs.promises.access(candidate, fs.constants.F_OK);
+    } catch {
+      missing.push(candidate);
+      continue;
+    }
+
+    try {
+      await fs.promises.rm(candidate, { recursive: true, force: true });
+      removed.push(candidate);
+    } catch (err) {
+      failed.push({ path: candidate, error: err?.message || 'Unknown error' });
+    }
+  }
+
+  return {
+    ok: failed.length === 0,
+    removed,
+    missing,
+    failed,
   };
 });
 

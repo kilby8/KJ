@@ -22,6 +22,7 @@ function sortFiles(files, key, dir) {
 }
 
 export default function App() {
+  const isWindowsClient = /Windows/i.test(window.navigator?.userAgent || '');
   const [files, setFiles]         = useState([]);
   const [loading, setLoading]     = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -113,6 +114,29 @@ export default function App() {
       addToast(message, 'error');
     }
   }, [addToast, toShortUpdateMessage]);
+
+  const handleResetUpdateCache = useCallback(async () => {
+    if (!window.electronAPI?.resetUpdateCache) {
+      addToast('Reset update cache is unavailable in this build', 'info');
+      return;
+    }
+
+    const confirmed = window.confirm('Reset local update cache now? This can fix stuck update feed errors.');
+    if (!confirmed) return;
+
+    try {
+      const result = await window.electronAPI.resetUpdateCache();
+      if (result?.ok) {
+        const removedCount = Array.isArray(result.removed) ? result.removed.length : 0;
+        addToast(`Update cache reset complete (${removedCount} folder${removedCount !== 1 ? 's' : ''} removed)`, 'success');
+        return;
+      }
+      const reason = result?.failed?.[0]?.error || result?.error || 'Unable to reset updater cache';
+      addToast(reason, 'error');
+    } catch (err) {
+      addToast(err?.message || 'Unable to reset updater cache', 'error');
+    }
+  }, [addToast]);
 
   // ── Filtered + sorted view ────────────────────────────────────────────────
   const displayFiles = useMemo(() => {
@@ -551,6 +575,16 @@ export default function App() {
         >
           {checkingUpdate ? 'Checking…' : 'Check Updates'}
         </button>
+        {isWindowsClient && (
+          <button
+            className="btn"
+            style={{ marginLeft: 6, padding: '2px 8px', fontSize: 11 }}
+            onClick={handleResetUpdateCache}
+            title="Clear local updater cache"
+          >
+            Reset Update Cache
+          </button>
+        )}
         <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--text-dim)' }}>Created by Kilby · IronOrr26</span>
       </div>
 

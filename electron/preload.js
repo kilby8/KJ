@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App / updates
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
   checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
+  resetUpdateCache: () => ipcRenderer.invoke('app:resetUpdateCache'),
   onUpdateStatus: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('update:status', handler);
