@@ -84,6 +84,13 @@ app.post('/api/auth/login', (req, res) => {
   return res.json({ ok: true, token, expiresAt });
 });
 
+app.get('/api/auth/login', (_req, res) => {
+  return res.status(405).json({
+    ok: false,
+    error: 'Method Not Allowed. Use POST /api/auth/login with JSON body: { username, password }',
+  });
+});
+
 app.get('/api/download', (req, res) => {
   if (!TOKEN_SECRET) {
     return res.status(503).json({ ok: false, error: 'Server not configured: missing TOKEN_SECRET' });
@@ -116,6 +123,23 @@ app.get('/api/health', (_req, res) => {
     downloadMode: DOWNLOAD_URL ? 'redirect' : (absoluteDownloadPath ? 'file' : 'unconfigured'),
     missingConfig: missing,
   });
+});
+
+app.get('/', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'ikfs-paywall-api',
+    authMode: 'login',
+    endpoints: [
+      'GET /api/health',
+      'POST /api/auth/login',
+      'GET /api/download?token=...'
+    ]
+  });
+});
+
+app.use((_req, res) => {
+  res.status(404).json({ ok: false, error: 'Not Found' });
 });
 
 async function start() {
