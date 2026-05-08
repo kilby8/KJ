@@ -8,6 +8,7 @@ import { useToasts, useSelection } from './hooks/useSelectionAndToasts';
 
 const logo = `${import.meta.env.BASE_URL}ikfs-logo.png`;
 const WRITABLE_EXTS = new Set(['MP3', 'ZIP', 'WAV', 'MP4', 'MKV', 'OGG', 'FLAC', 'M4A', 'WMA']);
+const MAX_UI_FILES = 20000;
 
 // ── Sorting helper ──────────────────────────────────────────────────────────
 function sortFiles(files, key, dir) {
@@ -129,13 +130,36 @@ export default function App() {
 
     try {
       let paths = filePaths || [];
+      let scanDetails = null;
       if (folderPaths) {
-        paths = await window.electronAPI.scanFolders(folderPaths);
+        if (window.electronAPI.scanFoldersDetailed) {
+          scanDetails = await window.electronAPI.scanFoldersDetailed(folderPaths);
+          paths = scanDetails?.files || [];
+        } else {
+          paths = await window.electronAPI.scanFolders(folderPaths);
+        }
       }
       if (!paths.length) {
         addToast('No supported files found', 'info');
         setLoading(false);
         return;
+      }
+
+      if (scanDetails?.truncated) {
+        addToast(
+          `Folder scan reached limit (${scanDetails.maxFiles} files). Narrow your folder scope for full loads.`,
+          'info',
+          5000,
+        );
+      }
+
+      if (paths.length > MAX_UI_FILES) {
+        paths = paths.slice(0, MAX_UI_FILES);
+        addToast(
+          `Loading first ${MAX_UI_FILES} files to keep UI responsive. Use smaller folders for full processing.`,
+          'info',
+          5000,
+        );
       }
 
       // Read metadata in batches so we can show progress

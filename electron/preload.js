@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // File system
   scanFolders: (folderPaths) => ipcRenderer.invoke('fs:scanFolders', folderPaths),
+  scanFoldersDetailed: (folderPaths) => ipcRenderer.invoke('fs:scanFoldersDetailed', folderPaths),
 
   // Metadata
   readMetadata: (filePaths) => ipcRenderer.invoke('metadata:read', filePaths),

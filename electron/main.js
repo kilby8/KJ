@@ -123,30 +123,60 @@ ipcMain.handle('dialog:openFiles', async () => {
 });
 
 // ── IPC: Scan a list of folders for files ───────────────────────────────────
-function scanFolder(folderPath, results = []) {
-  let entries;
-  try {
-    entries = fs.readdirSync(folderPath, { withFileTypes: true });
-  } catch {
-    return results;
-  }
-  for (const entry of entries) {
-    const fullPath = path.join(folderPath, entry.name);
-    if (entry.isDirectory()) {
-      scanFolder(fullPath, results);
-    } else if (entry.isFile()) {
-      results.push(fullPath);
+const SCAN_SUPPORTED_EXTS = new Set(['mp3', 'wav', 'mp4', 'mkv', 'cdg', 'zip', 'kar', 'ogg', 'flac', 'm4a', 'wma']);
+const SCAN_MAX_FILES = 50000;
+
+function scanFoldersDetailed(folderPaths) {
+  const stack = [...folderPaths];
+  const files = [];
+  let seenFiles = 0;
+  let skippedUnsupported = 0;
+
+  while (stack.length && files.length < SCAN_MAX_FILES) {
+    const currentDir = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (files.length >= SCAN_MAX_FILES) break;
+      const fullPath = path.join(currentDir, entry.name);
+
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+        continue;
+      }
+
+      if (!entry.isFile()) continue;
+      seenFiles += 1;
+      const ext = path.extname(entry.name).toLowerCase().slice(1);
+      if (!SCAN_SUPPORTED_EXTS.has(ext)) {
+        skippedUnsupported += 1;
+        continue;
+      }
+
+      files.push(fullPath);
     }
   }
-  return results;
+
+  return {
+    files,
+    seenFiles,
+    skippedUnsupported,
+    truncated: stack.length > 0 || files.length >= SCAN_MAX_FILES,
+    maxFiles: SCAN_MAX_FILES,
+  };
 }
 
+ipcMain.handle('fs:scanFoldersDetailed', async (_event, folderPaths) => scanFoldersDetailed(folderPaths || []));
+
+// Backward-compatible IPC used by older renderer builds.
 ipcMain.handle('fs:scanFolders', async (_event, folderPaths) => {
-  const files = [];
-  for (const fp of folderPaths) {
-    scanFolder(fp, files);
-  }
-  return files;
+  const details = scanFoldersDetailed(folderPaths || []);
+  return details.files;
 });
 
 function extractDiscIdFromText(text) {
