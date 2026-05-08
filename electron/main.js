@@ -344,6 +344,83 @@ function parseFromFileName(baseName) {
   return { discId, artist: '', title: withoutDisc };
 }
 
+function toTagString(value) {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number') return String(value);
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const v = toTagString(item);
+      if (v) return v;
+    }
+    return '';
+  }
+  if (typeof value === 'object') {
+    // Common for comments/lyrics frames where text is nested.
+    if (value.text !== undefined) return toTagString(value.text);
+    return '';
+  }
+  return '';
+}
+
+function pickFirstTag(...candidates) {
+  for (const c of candidates) {
+    const v = toTagString(c);
+    if (v) return v;
+  }
+  return '';
+}
+
+function buildAllTags(meta) {
+  const c = meta?.common || {};
+  const trackNo = c.track && c.track.no ? String(c.track.no) : '';
+  const diskNo = c.disk && c.disk.no ? String(c.disk.no) : '';
+  return {
+    artist: pickFirstTag(c.artist, c.albumartist, c.artists),
+    title: pickFirstTag(c.title),
+    album: pickFirstTag(c.album),
+    albumArtist: pickFirstTag(c.albumartist),
+    artists: Array.isArray(c.artists) ? c.artists.filter(Boolean) : [],
+    genre: Array.isArray(c.genre) ? c.genre.filter(Boolean) : [],
+    composer: Array.isArray(c.composer) ? c.composer.filter(Boolean) : [],
+    lyricist: Array.isArray(c.lyricist) ? c.lyricist.filter(Boolean) : [],
+    year: pickFirstTag(c.year, c.date),
+    date: pickFirstTag(c.date),
+    track: trackNo,
+    disc: diskNo,
+    comment: pickFirstTag(c.comment),
+    isrc: pickFirstTag(c.isrc),
+    bpm: pickFirstTag(c.bpm),
+    key: pickFirstTag(c.key),
+    language: pickFirstTag(c.language),
+    label: Array.isArray(c.label) ? c.label.filter(Boolean) : [],
+    publisher: pickFirstTag(c.publisher),
+    copyright: pickFirstTag(c.copyright),
+    encodedBy: pickFirstTag(c.encodedby),
+    encoderSettings: pickFirstTag(c.encodersettings),
+  };
+}
+
+function extractPrimaryFields(meta) {
+  const c = meta?.common || {};
+  const artist = pickFirstTag(c.artist, c.albumartist, c.artists);
+  const title = pickFirstTag(c.title);
+  const album = pickFirstTag(c.album);
+  const discId = pickFirstTag(c.comment, c.description);
+  const year = pickFirstTag(c.year, c.date);
+  const track = c.track && c.track.no ? String(c.track.no) : '';
+
+  return {
+    artist,
+    title,
+    album,
+    discId,
+    year,
+    track,
+    allTags: buildAllTags(meta),
+  };
+}
+
 // ── IPC: Read metadata for a list of file paths ──────────────────────────────
 ipcMain.handle('metadata:read', async (_event, filePaths) => {
   const { parseFile } = await import('music-metadata');
@@ -370,21 +447,19 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
     let discId = '';
     let year = '';
     let track = '';
+    let allTags = null;
 
     if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'wma', 'mp4', 'mkv'].includes(ext)) {
       try {
         const meta = await parseFile(fp, { duration: false, skipCovers: true });
-        artist = meta.common.artist || '';
-        title = meta.common.title || '';
-        album = meta.common.album || '';
-        const rawComment = Array.isArray(meta.common.comment)
-          ? meta.common.comment[0]
-          : meta.common.comment;
-        discId = (typeof rawComment === 'object' && rawComment !== null)
-          ? (rawComment.text || '')
-          : (rawComment || '');
-        year = meta.common.year ? String(meta.common.year) : '';
-        track = meta.common.track && meta.common.track.no ? String(meta.common.track.no) : '';
+        const extracted = extractPrimaryFields(meta);
+        artist = extracted.artist;
+        title = extracted.title;
+        album = extracted.album;
+        discId = extracted.discId;
+        year = extracted.year;
+        track = extracted.track;
+        allTags = extracted.allTags;
       } catch {
         // leave empty — file may have no tags
       }
@@ -399,17 +474,14 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
           fs.writeFileSync(tmpMp3, buf);
           try {
             const meta = await parseFile(tmpMp3, { duration: false, skipCovers: true });
-            artist = meta.common.artist || '';
-            title = meta.common.title || '';
-            album = meta.common.album || '';
-            const rawComment = Array.isArray(meta.common.comment)
-              ? meta.common.comment[0]
-              : meta.common.comment;
-            discId = (typeof rawComment === 'object' && rawComment !== null)
-              ? (rawComment.text || '')
-              : (rawComment || '');
-            year = meta.common.year ? String(meta.common.year) : '';
-            track = meta.common.track && meta.common.track.no ? String(meta.common.track.no) : '';
+            const extracted = extractPrimaryFields(meta);
+            artist = extracted.artist;
+            title = extracted.title;
+            album = extracted.album;
+            discId = extracted.discId;
+            year = extracted.year;
+            track = extracted.track;
+            allTags = extracted.allTags;
           } catch { /* empty */ }
           try { fs.unlinkSync(tmpMp3); } catch { /* empty */ }
         }
@@ -446,6 +518,7 @@ ipcMain.handle('metadata:read', async (_event, filePaths) => {
       year,
       track,
       baseName,
+      allTags,
     };
     results.push(record);
     setCachedMetadata(fp, stat, record);
