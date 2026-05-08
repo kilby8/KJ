@@ -367,18 +367,21 @@ export default function App() {
         const fresh = {
           ...file,
           artist: result.metadata.artist || file.artist || '',
-          title: result.metadata.title || file.title || '',
-          album: result.metadata.album || file.album || '',
+          title:  result.metadata.title  || file.title  || '',
+          album:  result.metadata.album  || file.album  || '',
           discId: result.metadata.discId || file.discId || '',
-          year: result.metadata.year || file.year || '',
-          track: result.metadata.track || file.track || '',
+          year:   result.metadata.year   || file.year   || '',
+          track:  result.metadata.track  || file.track  || '',
         };
         setFiles(prev => prev.map(f => f.filePath === fresh.filePath ? fresh : f));
-        addToast(`Online metadata match from ${result.source}`, 'success');
+        const sourceLabel = result.source === 'filename'
+          ? 'filename parse (no confident online match)'
+          : `${result.source} (confidence: ${result.confident ? 'high' : 'low'})`;
+        addToast(`Metadata from ${sourceLabel}`, result.source === 'filename' ? 'info' : 'success');
         return fresh;
       }
 
-      addToast(result?.error || 'No online metadata match found; using local parse', 'info');
+      addToast(result?.error || 'No match found — falling back to local parse', 'info');
       return handleReparse(file);
     } catch (err) {
       addToast(`Online lookup failed: ${err?.message || 'unknown error'}`, 'error');

@@ -491,21 +491,6 @@ function normalizeLookupText(value) {
   return String(value || '').replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function buildLookupSearchTerm(seed) {
-  const artist = normalizeLookupText(seed?.artist);
-  const title = normalizeLookupText(seed?.title);
-  const album = normalizeLookupText(seed?.album);
-  const discId = normalizeLookupText(seed?.discId);
-  const fileName = normalizeLookupText(path.basename(seed?.fileName || '', path.extname(seed?.fileName || '')));
-
-  if (artist && title) return `${artist} ${title}`;
-  if (title && album) return `${title} ${album}`;
-  if (discId && title) return `${discId} ${title}`;
-  if (discId) return discId;
-  if (title) return title;
-  return fileName;
-}
-
 function tokenize(value) {
   return new Set(
     normalizeLookupText(value)
@@ -528,14 +513,28 @@ function overlapScore(left, right) {
   return common / Math.max(l.size, r.size);
 }
 
-function scoreLookupCandidate(seed, candidate) {
+/**
+ * Score a candidate against the canonical seed (filename-derived ground truth).
+ * Title match is weighted heaviest — it is the most reliable karaoke identifier.
+ * Artist match is secondary. Album adds a bonus when present.
+ */
+function scoreLookupCandidate(canonicalSeed, candidate) {
   let score = 0;
-  score += overlapScore(seed?.title, candidate?.title) * 55;
-  score += overlapScore(seed?.artist, candidate?.artist) * 35;
-  score += overlapScore(seed?.album, candidate?.album) * 15;
-  if (normalizeLookupText(seed?.discId) && normalizeLookupText(candidate?.discId || '').includes(normalizeLookupText(seed?.discId))) {
-    score += 20;
-  }
+
+  // Title: 60 pts — primary field
+  score += overlapScore(canonicalSeed.title, candidate.title) * 60;
+
+  // Artist: 30 pts — secondary field
+  score += overlapScore(canonicalSeed.artist, candidate.artist) * 30;
+
+  // Album: 10 pts — bonus when available
+  score += overlapScore(canonicalSeed.album, candidate.album) * 10;
+
+  // Extra confidence boost when both title AND artist both have strong overlap
+  const titleOverlap = overlapScore(canonicalSeed.title, candidate.title);
+  const artistOverlap = overlapScore(canonicalSeed.artist, candidate.artist);
+  if (titleOverlap >= 0.8 && artistOverlap >= 0.7) score += 15;
+
   return score;
 }
 
@@ -558,8 +557,8 @@ async function fetchJsonWithTimeout(url, headers = {}) {
 }
 
 async function lookupFromItunes(term) {
-  const endpoint = `https://itunes.apple.com/search?media=music&entity=song&limit=12&term=${encodeURIComponent(term)}`;
-  const json = await fetchJsonWithTimeout(endpoint, { 'User-Agent': 'IKFS/1.0.43 (metadata lookup)' });
+  const endpoint = `https://itunes.apple.com/search?media=music&entity=song&limit=15&term=${encodeURIComponent(term)}`;
+  const json = await fetchJsonWithTimeout(endpoint, { 'User-Agent': 'IKFS/1.0.45 (metadata lookup)' });
   const results = Array.isArray(json?.results) ? json.results : [];
   return results.map((item) => ({
     source: 'itunes',
@@ -572,9 +571,9 @@ async function lookupFromItunes(term) {
 }
 
 async function lookupFromMusicBrainz(term) {
-  const endpoint = `https://musicbrainz.org/ws/2/recording?fmt=json&limit=12&query=${encodeURIComponent(term)}`;
+  const endpoint = `https://musicbrainz.org/ws/2/recording?fmt=json&limit=15&query=${encodeURIComponent(term)}`;
   const json = await fetchJsonWithTimeout(endpoint, {
-    'User-Agent': 'IKFS/1.0.43 (metadata lookup; https://github.com/kilby8/KJ)',
+    'User-Agent': 'IKFS/1.0.45 (metadata lookup; https://github.com/kilby8/KJ)',
     Accept: 'application/json',
   });
   const recordings = Array.isArray(json?.recordings) ? json.recordings : [];
@@ -592,45 +591,91 @@ async function lookupFromMusicBrainz(term) {
   });
 }
 
+// Confidence threshold: online candidate must score above this to beat filename parse
+const ONLINE_CONFIDENCE_THRESHOLD = 35;
+
 async function lookupMetadataOnline(seed) {
   if (typeof fetch !== 'function') {
     return { ok: false, error: 'Online lookup is unavailable in this runtime' };
   }
 
-  const term = buildLookupSearchTerm(seed);
-  if (!term) {
+  // ── Step 1: filename parse is the ground truth ───────────────────────────
+  // The filename is the most reliable source for karaoke files. Parse it first
+  // and use it as the canonical seed for searching and scoring.
+  const baseName = path.basename(seed?.fileName || '', path.extname(seed?.fileName || ''));
+  const fileParsed = parseFromFileName(baseName);
+  const fileDiscId = extractDiscIdFromText(baseName).discId;
+
+  const canonicalSeed = {
+    artist: fileParsed.artist || normalizeLookupText(seed?.artist),
+    title:  fileParsed.title  || normalizeLookupText(seed?.title),
+    album:  normalizeLookupText(seed?.album),   // album rarely in filename
+    discId: fileDiscId || fileParsed.discId || normalizeLookupText(seed?.discId),
+  };
+
+  // ── Step 2: build search term from filename parse ────────────────────────
+  let searchTerm = '';
+  if (canonicalSeed.artist && canonicalSeed.title) {
+    searchTerm = `${canonicalSeed.artist} ${canonicalSeed.title}`;
+  } else if (canonicalSeed.title) {
+    searchTerm = canonicalSeed.title;
+  } else {
+    searchTerm = normalizeLookupText(baseName);
+  }
+
+  if (!searchTerm) {
     return { ok: false, error: 'Not enough data to search online metadata' };
   }
 
+  // ── Step 3: query both online sources in parallel ─────────────────────────
   const [itunes, musicBrainz] = await Promise.all([
-    lookupFromItunes(term),
-    lookupFromMusicBrainz(term),
+    lookupFromItunes(searchTerm),
+    lookupFromMusicBrainz(searchTerm),
   ]);
-  const candidates = [...itunes, ...musicBrainz]
-    .map((candidate) => ({
-      ...candidate,
-      score: scoreLookupCandidate(seed, candidate),
-    }))
+
+  // ── Step 4: score every online candidate against filename parse ────────────
+  const onlineCandidates = [...itunes, ...musicBrainz].map((candidate) => ({
+    ...candidate,
+    score: scoreLookupCandidate(canonicalSeed, candidate),
+  }));
+
+  // ── Step 5: filename parse is always a candidate (baseline score 30) ──────
+  // Online sources must beat this to be chosen; otherwise filename parse wins.
+  const filenameFallback = {
+    source: 'filename',
+    artist: canonicalSeed.artist,
+    title:  canonicalSeed.title,
+    album:  canonicalSeed.album,
+    year:   String(seed?.year || ''),
+    track:  String(seed?.track || ''),
+    score:  30,
+  };
+
+  const allCandidates = [...onlineCandidates, filenameFallback]
     .sort((a, b) => b.score - a.score);
 
-  const best = candidates[0];
-  if (!best || best.score < 16) {
-    return { ok: false, error: 'No close online metadata match found' };
-  }
+  const best = allCandidates[0];
+
+  // ── Step 6: merge best candidate — discId always from filename ─────────────
+  const isOnlineWin = best.source !== 'filename' && best.score >= ONLINE_CONFIDENCE_THRESHOLD;
 
   return {
     ok: true,
     source: best.source,
+    confident: isOnlineWin,
     metadata: {
-      artist: best.artist || normalizeLookupText(seed?.artist),
-      title: best.title || normalizeLookupText(seed?.title),
-      album: best.album || normalizeLookupText(seed?.album),
-      year: best.year || String(seed?.year || ''),
-      track: best.track || String(seed?.track || ''),
-      discId: normalizeLookupText(seed?.discId),
+      // Online wins on fields it matched well; filename fills any blanks
+      artist: best.artist || canonicalSeed.artist,
+      title:  best.title  || canonicalSeed.title,
+      album:  best.album  || canonicalSeed.album || normalizeLookupText(seed?.album),
+      year:   best.year   || String(seed?.year || ''),
+      track:  best.track  || String(seed?.track || ''),
+      // discId is ALWAYS from filename — it's a catalogue reference, not in music DBs
+      discId: fileDiscId || canonicalSeed.discId || normalizeLookupText(seed?.discId),
     },
   };
 }
+
 
 // ── Metadata parse helpers ───────────────────────────────────────────────────
 const TAG_PARSE_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'wma', 'mp4', 'mkv', 'zip']);
