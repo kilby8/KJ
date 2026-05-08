@@ -739,7 +739,14 @@ async function parseOneFile(fp, parseWithRetry) {
   } else if (ext === 'zip') {
     try {
       const AdmZip = require('adm-zip');
-      const zip = new AdmZip(fp);
+      let zip;
+      try {
+        zip = new AdmZip(fp);
+      } catch (zipErr) {
+        // ZIP file is corrupted — skip parsing, fallback to filename only
+        console.warn(`[ZIP CORRUPT] ${fp}: ${zipErr?.message || 'Cannot parse ZIP'}`);
+        return null;
+      }
       const mp3Entry = zip.getEntries().find(e => e.entryName.toLowerCase().endsWith('.mp3'));
       if (mp3Entry) {
         const buf = mp3Entry.getData();
@@ -1036,13 +1043,27 @@ ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
     );
     try {
       await cleanupStaleWriteTempsInDir(path.dirname(filePath));
+
+      // Verify ZIP file is not corrupted before attempting to modify it
+      try {
+        await fs.promises.access(filePath, fs.constants.R_OK);
+      } catch {
+        return { ok: false, error: `ZIP file not readable or missing: ${filePath}` };
+      }
+
       const AdmZip = require('adm-zip');
-      const NodeID3 = require('node-id3');
-      const zip = new AdmZip(filePath);
+      let zip;
+      try {
+        zip = new AdmZip(filePath);
+      } catch (zipErr) {
+        return { ok: false, error: `ZIP file is corrupted or invalid: ${zipErr?.message || 'Cannot parse ZIP'}` };
+      }
+
       const mp3Entry = zip.getEntries().find(e => e.entryName.toLowerCase().endsWith('.mp3'));
       if (!mp3Entry) return { ok: false, error: 'No MP3 inside zip' };
 
       const buf = mp3Entry.getData();
+      const NodeID3 = require('node-id3');
       const existing = NodeID3.read(buf) || {};
       const merged = {
         ...existing,
@@ -1064,7 +1085,7 @@ ipcMain.handle('metadata:write', async (_event, filePath, tags) => {
       return { ok: true };
     } catch (err) {
       await fs.promises.unlink(tmpZip).catch(() => {});
-      return { ok: false, error: err.message };
+      return { ok: false, error: err.message || 'ZIP metadata write failed' };
     }
   }
 
